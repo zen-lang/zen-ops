@@ -9,6 +9,7 @@
 
         org.eclipse.jetty.websocket/websocket-client {:mvn/version "9.4.43.v20210629"}
 
+        org.bouncycastle/bcpkix-jdk15on {:mvn/version "1.52"}
         json-schema/json-schema {:mvn/version "0.2.0-RC11"}
         com.rpl/specter      {:mvn/version "1.1.3"}}
 
