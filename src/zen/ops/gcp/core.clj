@@ -18,7 +18,7 @@
                 "aud" (:token_uri service-account)
                 "exp" (+ now-t (or (:expiration opts) 30))
                 "iat" now-t}
-        jwt (jwt/sign (jwt/get-only-private-key (jwt/read-key (:private_key sa))) claims :RS256)
+        jwt (jwt/sign (jwt/get-only-private-key (jwt/read-key (:private_key service-account))) claims :RS256)
         token-resp @(http/post (:token_uri service-account)
                                {:form-params {:grant_type "urn:ietf:params:oauth:grant-type:jwt-bearer"
                                               :assertion jwt}})]
