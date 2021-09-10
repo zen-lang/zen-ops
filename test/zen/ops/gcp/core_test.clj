@@ -3,10 +3,11 @@
             [zen.core :as zen]
             [matcho.core :as matcho]
             [cheshire.core :as cheshire]
-            [clojure.test :as t]))
+            [clojure.test :as t]
+            [clojure.java.io :as io]))
 
-(def def-json (cheshire.core/parse-string (slurp "libs/zen-ops/test/zen/ops/gcp/gcp.cloudresourcemanager.v1.json") keyword))
-(def k8s-def-json (cheshire.core/parse-string (slurp "libs/zen-ops/test/zen/ops/gcp/gcp.container.v1.json") keyword))
+(def def-json (cheshire.core/parse-string (slurp (io/resource "zen/ops/gcp/gcp.cloudresourcemanager.v1.json")) keyword))
+(def k8s-def-json (cheshire.core/parse-string (slurp (io/resource "zen/ops/gcp/gcp.container.v1.json")) keyword))
 
 ;; (def def-json (cheshire.core/parse-string (slurp "test/zen/ops/gcp/gcp.cloudresourcemanager.v1.json") keyword))
 
