@@ -59,7 +59,8 @@
        (mapv (fn [x]
                (if (and (str/starts-with? x "{")
                         (str/ends-with? x "}"))
-                 (keyword (subs x 1 (dec (count x))))
+                 (keyword (str/replace (subs x 1 (dec (count x)))
+                                       #"^\+" ""))
                  x)))))
 
 (defmulti sch2zen (fn [x] (keyword (:type x))))
@@ -94,7 +95,8 @@
     (case f
       "google-datetime"
       (assoc (dissoc sch :format) :type 'zen/datetime)
-      (assoc sch :type 'zen/string))))
+      (cond-> (assoc sch :type 'zen/string)
+          (:pattern sch) (-> (dissoc :pattern) (assoc :regex (:pattern sch)))))))
 
 (defmethod sch2zen :integer
   [sch]
@@ -130,7 +132,14 @@
          {:type  'zen/vector
           :every (*sch2zen its)}))
 
-(defn to-zen-op [base-url {prms :parameters req :request :as op-def}]
+(defn to-zen-op [{base-url :base-url pth :path} {prms :parameters req :request :as op-def}]
+  (when (not (= (:flatPath op-def)
+                (:path op-def)))
+    #_(println (:id op-def) pth
+             "\n>"
+             (:flatPath op-def)
+             "\n>"
+             (:path op-def)))
   (let [base-url (str/replace base-url #"/$" "")
         params {:type 'zen/map
                 :keys {}}
@@ -147,10 +156,25 @@
     {:zen/tags #{'gcp/op}
      :zen/desc (:description op-def)
      :gcp/scopes (into #{} (:scopes op-def))
-     :http/url  (into [base-url] (url-template (:flatPath op-def)))
+     :http/url  (into [base-url] (url-template (:path op-def)))
+     :http/xurl  (into [base-url] (url-template (:flatPath op-def)))
      :http/method (keyword (str/lower-case (:httpMethod op-def)))
+     ;; :source op-def
      :params params
      :result (*sch2zen (:response op-def))}))
+
+(defn recursive-apis [acc {pth :path bu :base-url :as ctx} api-def]
+  (let [acc (->> (:methods api-def)
+                 (reduce
+                  (fn [acc [m op-def]]
+                    (assoc acc (symbol (str (str/join "-" (conj pth (name m)))))
+                           (assoc (to-zen-op ctx op-def) :zen/tags #{'gcp/op})))
+                  acc))]
+    (->> (:resources api-def)
+         (reduce (fn [acc [res api]]
+                   (let [ctx (update ctx :path conj (name res))]
+                     (recursive-apis acc ctx api)))
+                 acc))))
 
 (defn load-api-definition [ztx nm api-def]
   (let [bu (:baseUrl api-def)
@@ -160,24 +184,20 @@
                  (reduce (fn [acc [k v]]
                            (assoc acc (symbol k) (assoc (*sch2zen v) :zen/tags #{'gcp/schema 'zen/schema})))
                          ns))
-        ns (->> (get-in api-def [:resources])
-                (reduce (fn [acc [res {mths :methods}]]
-                          (->> mths
-                               (reduce (fn [acc [m op-def]]
-                                         (assoc acc (symbol (str (name res) "-" (name m)))
-                                                (assoc (to-zen-op bu op-def) :zen/tags #{'gcp/op})))
-                                       acc)))
-                        ns))]
+        ns (recursive-apis ns {:path [] :base-url bu} api-def)]
     (zen/load-ns ztx ns)
     :ok))
 
-(defn load-api [ztx nm]
+(defn get-api [ztx nm]
   (if-let [{disc-url :discoveryRestUrl :as disc} (zen/get-symbol ztx (symbol (str nm) "discovery"))]
-    (let [ns-name nm
-          res (json-get disc-url)]
-      (load-api-definition ztx nm res)
-      res)
+    (json-get disc-url)
     {:error {:message (str "No api for " nm)}}))
+
+(defn load-api [ztx nm]
+  (let [res (get-api ztx nm)]
+    (if (:error res)
+      res
+      (load-api-definition ztx nm res))))
 
 (defn render-url [url-template params]
   (->> url-template

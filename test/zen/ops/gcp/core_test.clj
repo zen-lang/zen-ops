@@ -126,13 +126,36 @@
 
   (sut/load-api-definition ztx 'gcp.container.v1 k8s-def-json)
 
-  
   (:methods (:zones (:resources (:projects (:resources k8s-def-json)))))
-  
+
   (zen/get-tag ztx 'gcp/schema)
 
   (:methods (:clusters (:resources (:locations (:resources (:projects (:resources k8s-def-json)))))))
-  
+
   (zen/get-symbol ztx 'gcp.container.v1/Cluster)
+
+  (zen/get-tag ztx 'gcp/op)
+
+  (zen/get-symbol ztx 'gcp.container.v1/projects-zones-clusters-list)
+  (sut/build-request ztx {:method 'gcp.container.v1/projects-zones-clusters-list
+                          :params {:zone "*"
+                                   :projectId "*"}})
+
+  
+
+
+  (sut/build-request ztx {:method 'gcp.cloudresourcemanager.v1/projects-list
+                          :params {:filter "labels.system:aidbox"}})
+
+  (zen/get-symbol ztx 'gcp.container.v1/projects-locations-clusters-list)
+
+  (matcho/match
+   (sut/build-request ztx {:method 'gcp.container.v1/projects-locations-clusters-list
+                           :params {:parent "projects/*/locations/*"}})
+
+   {:url "https://container.googleapis.com/v1/projects/*/locations/*/clusters",
+    :method :get,
+    :query-params {},
+    :headers {}})
 
   )
