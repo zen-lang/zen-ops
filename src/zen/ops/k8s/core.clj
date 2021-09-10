@@ -19,7 +19,8 @@
 
 (defn new-context [config]
   (let [ztx (zen.core/new-context {:kube/config config})
-        openapi-resp (request ztx {:method :get :url "/openapi/v2"})]
+        openapi-resp (request ztx {:method :get :url "openapi/v2"
+                                   :headers {"authorization" (str "Bearer " (:kube/token config))}})]
     (if (= 200 (:status openapi-resp))
       (do
         (openapi/load-openapi ztx (:body openapi-resp))
@@ -38,7 +39,7 @@
   (let [res (request ztx (build-request ztx req))]
     (if (and (:status res) (< (:status res) 300))
       {:result (-> res :body)}
-      {:error res})))
+      {:error (or (:body res) res)})))
 
 (defn items
   ([ks res]
