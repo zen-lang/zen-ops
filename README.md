@@ -1,5 +1,8 @@
 # zen-ops
 
+![build](https://github.com/zen-lang/zen-ops/actions/workflows/main/badge.svg)
+
+
 Automate operations with zen dsls
 
 * k8s
