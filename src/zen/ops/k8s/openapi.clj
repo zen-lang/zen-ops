@@ -177,7 +177,6 @@
 
 (defn op-def [ztx m]
   (let [m (if (map? m) (:method m) m)
-        _ (println ::m m)
         op-def (zen/get-symbol ztx (symbol m))]
     (when-not op-def (throw (Exception. (pr-str "Op not found " m))))
     op-def))
