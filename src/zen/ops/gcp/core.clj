@@ -200,14 +200,18 @@
       (load-api-definition ztx nm res))))
 
 (defn render-url [url-template params]
-  (->> url-template
-       (mapv (fn [x]
-               (if (string? x)
-                 x
-                 (if-let [v (get params x)]
-                   v
-                   (throw (Exception. (pr-str :missed-param x params)))))))
-       (str/join "/")))
+  (let [resource (:resource params)
+        url (->> url-template
+                 (mapv (fn [x]
+                         (if (string? x)
+                           x
+                           (if-let [v (get params x)]
+                             v
+                             (throw (Exception. (pr-str :missed-param x params)))))))
+                 (str/join "/"))]
+    (if resource
+      (str/replace url #"\{\+resource\}" resource)
+        url)))
 
 (defn build-request [ztx op]
   (if-let [op-def (zen/get-symbol ztx (symbol (:method op)))]

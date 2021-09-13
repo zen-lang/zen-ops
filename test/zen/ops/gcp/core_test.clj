@@ -6,8 +6,11 @@
             [clojure.test :as t]
             [clojure.java.io :as io]))
 
+;;https://iam.googleapis.com/$discovery/rest?version=v1
+
 (def def-json (cheshire.core/parse-string (slurp (io/resource "zen/ops/gcp/gcp.cloudresourcemanager.v1.json")) keyword))
 (def k8s-def-json (cheshire.core/parse-string (slurp (io/resource "zen/ops/gcp/gcp.container.v1.json")) keyword))
+(def iam-def-json (cheshire.core/parse-string (slurp (io/resource "zen/ops/gcp/gcp.iam.v1.json")) keyword))
 
 ;; (def def-json (cheshire.core/parse-string (slurp "test/zen/ops/gcp/gcp.cloudresourcemanager.v1.json") keyword))
 
@@ -159,4 +162,16 @@
     :query-params {},
     :headers {}})
 
+  (sut/load-api-definition ztx 'gcp.iam.v1 iam-def-json)
+
+  (matcho/match
+   (sut/build-request ztx
+                      {:method 'gcp.iam.v1/projects-serviceAccounts-setIamPolicy
+                      :params {:resource "projects/samurai-ops/serviceAccounts/account@account.iam.gserviceaccount.com"
+                              :body {:policy {:bindings [{:role "roles/containerregistry.ServiceAgent"}]}}
+               }})
+   {:url "https://iam.googleapis.com/v1/projects/samurai-ops/serviceAccounts/account@account.iam.gserviceaccount.com:setIamPolicy"
+    :method :post
+    :query-params {}})
+  
   )
