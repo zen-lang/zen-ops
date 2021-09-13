@@ -76,7 +76,7 @@
           (print-error (op ktx
                            {:method (openapi/api-name "put" resource)
                             :params (assoc metadata :body resource)}))
-          resp)))))
+          (print-error resp))))))
 
 (comment
   (def ztx (new-context  {:kube/url   "http://localhost:8080"}))
