@@ -4,6 +4,7 @@
    [zen.ops.k8s.openapi :as openapi]
    [zen.ops.k8s.exec]
    [org.httpkit.client :as http]
+   [matcho.core :as matcho]
    [cheshire.core :as cheshire]))
 
 
@@ -54,6 +55,29 @@
 
 (def exec zen.ops.k8s.exec/exec)
 
+
+(defn print-error [res]
+  (when-let [err (:error res)]
+    (println "ERROR:" (:error err)))
+  res)
+
+(defn update-resource [ktx resource]
+  (let [metadata (select-keys (:metadata resource) [:name :namespace])
+        read-op (openapi/api-name "get" resource)
+        {err :error old-resource :result :as resp} (op ktx {:method read-op 
+                                                      :params metadata})]
+    (if (= 404 (:code err))
+      (print-error (op ktx {:method (openapi/api-name "post" resource)
+                            :params (cond-> {:body resource}
+                                      (:namespace metadata)
+                                      (assoc :namespace (:namespace metadata)))}))
+      (let [diff (matcho/match*  old-resource resource)]
+        (if (not (empty? diff))
+          (print-error (op ktx
+                           {:method (openapi/api-name "put" resource)
+                            :params (assoc metadata :body resource)}))
+          resp)))))
+
 (comment
   (def ztx (new-context  {:kube/url   "http://localhost:8080"}))
 
@@ -75,27 +99,27 @@
   (op-def ztx 'io.k8s.api.core.v1.PodExecOptions/connect)
 
   (->>
-    (op ztx {:method 'io.k8s.api.apps.v1.Deployment/list
-             :params {:namespace "docs"}})
-    (items))
+   (op ztx {:method 'io.k8s.api.apps.v1.Deployment/list
+            :params {:namespace "docs"}})
+   (items))
 
   (->>
-    (op ztx {:method 'io.k8s.api.core.v1.Pod/list
-             :params {:namespace "docs"}})
-    (items))
+   (op ztx {:method 'io.k8s.api.core.v1.Pod/list
+            :params {:namespace "docs"}})
+   (items))
 
   (->>
-    (op ztx {:method 'io.k8s.api.core.v1.Pod/list
-             :params {:namespace "cluster-production"}})
-    (items [[:status :phase]]))
+   (op ztx {:method 'io.k8s.api.core.v1.Pod/list
+            :params {:namespace "cluster-production"}})
+   (items [[:status :phase]]))
 
   (list-ops ztx "names")
   (list-ops ztx "cert lis")
 
   (->>
-    (op ztx {:method 'io.k8s.api.core.v1.Namespace/list
-             :params {:namespace "cluster-production"}})
-    (items [[:status :phase]]))
+   (op ztx {:method 'io.k8s.api.core.v1.Namespace/list
+            :params {:namespace "cluster-production"}})
+   (items [[:status :phase]]))
 
 
   (op-def ztx 'io.k8s.api.core.v1.Namespace/get)
@@ -109,9 +133,9 @@
       (when (get-in d [:params :namespace])
         (println o)
         (->>
-          (op ztx {:method o :params {:namespace "docs"}})
-          (items)
-          (println)))))
+         (op ztx {:method o :params {:namespace "docs"}})
+         (items)
+         (println)))))
 
 
   (list-ops ztx "exec")
@@ -120,18 +144,18 @@
   (list-ops ztx)
 
   (->>
-    (op ztx {:method 'io.ci3.v1.Build/list})
-    :result
-    :items
-    (count))
+   (op ztx {:method 'io.ci3.v1.Build/list})
+   :result
+   :items
+   (count))
 
   (future
     (doseq [b (->>
-                (op ztx {:method 'io.ci3.v1.Build/list})
-                :result
-                :items
-                ;;(count)
-                #_(filter #(contains? #{"success" "failed"} (:status %))))]
+               (op ztx {:method 'io.ci3.v1.Build/list})
+               :result
+               :items
+               ;;(count)
+               #_(filter #(contains? #{"success" "failed"} (:status %))))]
 
       (println (op ztx {:method 'io.ci3.v1.Build/delete
                         :params {:name (get-in b [:metadata :name]) :namespace "default"}}))))
@@ -154,7 +178,6 @@
                                     :fieldSelector "status.phase=Running"
                                     :namespace     "default"}})
                   (get-in [:result :items]))]
-    (println ">>" (get-in pod [:metadata :name]))
     (-> (exec ztx
               {:name      (get-in pod [:metadata :name])
                :namespace (get-in pod [:metadata :namespace])

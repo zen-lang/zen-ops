@@ -8,11 +8,21 @@
 
 (defmulti sch2zen (fn [x] (keyword (:type x))))
 
+
+(defn normalize-ns [s]
+  (-> s
+      (str/replace #"core\.api\.k8s\.io\." "")
+      (str/replace #"apps\.api\.k8s\.io\." "apps.")))
+
+(defn build-schema-name [k]
+  (let [k (if (keyword? k) (subs (str k) 1) k)
+        [sym v & api] (reverse (str/split k  #"\."))]
+    [(symbol (normalize-ns (str "k8s." (str/join "." api) "." v)))
+     (symbol sym)]))
+
 (defn k8s-name2zen [k]
-  (let [parts   (str/split k  #"\.")
-        ns      (str/join  "." (butlast parts))
-        sym     (last parts)]
-    (symbol ns sym)))
+  (apply symbol (mapv str (build-schema-name k))))
+
 
 (defn ref2sym [ref]
   (-> ref
@@ -85,12 +95,11 @@
         x) n)
     @imp))
 
+
 (defn load-schemas [ztx acc schemas]
   (->> schemas
        (reduce (fn [acc [k v]]
-                 (let [parts (str/split (subs (str k) 1)  #"\.")
-                       ns    (symbol (str/join  "." (butlast parts)))
-                       sym   (symbol (last parts))]
+                 (let [[ns sym] (build-schema-name k)]
                    (-> acc
                        (update  ns merge {'ns ns})
                        (assoc-in [ns sym] (schema-to-zen v)))))
@@ -113,12 +122,7 @@
                {})))
 
 (defn build-ns-name [g v k]
-  (let [grp (if (or (nil? g)(str/blank? g))
-              "core" g)
-        grp (if (str/includes? grp ".")
-              grp (str grp ".api.k8s.io"))
-        g (into [] (reverse (str/split grp  #"\.")))]
-    (str/join "." (->> (into g [v k]) (remove str/blank?)))))
+  (str/join "." (->> ["k8s" g v k] (remove str/blank?))))
 
 (defn load-operations [ztx acc paths]
   (->> paths
@@ -156,11 +160,6 @@
 
 (defn build-filter [q]
   (when q (re-pattern (str ".*" (str/join ".*" (mapv str/lower-case (str/split q #"\s+"))) ".*"))))
-
-(re-matches
-  (build-filter "cert list")
-  "io.cert-manager.acme.v1.Challenge/list"
-  )
 
 (defn list-ops [ztx & [q]]
   (let [q (build-filter q)]
@@ -219,11 +218,15 @@
 
 (defn validate [ztx res]
   (let [[g v] (str/split (:apiVersion res) #"/" 2)
-        ns    (build-ns-name g v nil)
-        sym (symbol ns (:kind res))]
+        sym (symbol (build-ns-name g v nil) (:kind res))]
     (if (zen/get-symbol ztx sym)
       (assoc (zen/validate ztx #{sym} res) :zen/name sym)
       {:errors [{:message (str "Could not find schema for " sym)}]})))
+
+
+(defn api-name [action res]
+  (let [[g v] (str/split (:apiVersion res) #"/" 2)]
+    (symbol (build-ns-name g v (:kind res)) action)))
 
 (comment
 
