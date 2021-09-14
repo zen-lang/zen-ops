@@ -158,8 +158,7 @@
 
 (defn load-namespaces [ztx openapi]
   (let [nss (load-schemas ztx {} (:definitions openapi))]
-    nss
-    #_(load-operations ztx nss (:paths openapi))))
+    (load-operations ztx nss (:paths openapi))))
 
 
 (defn *update-layer [nss k v]

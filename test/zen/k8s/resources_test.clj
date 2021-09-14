@@ -9,12 +9,10 @@
             [clojure.walk]
             [clojure.test :as t]))
 
-(defonce k8s-swagger (cheshire.core/parse-string (slurp (io/resource "k8s-swagger.json")) keyword))
-
 
 (t/deftest test-k8s-resources
   (def ztx (zen/new-context {}))
-  (openapi/load-openapi ztx k8s-swagger)
+  (openapi/load-default-api ztx)
 
   (zen/load-ns ztx {'ns 'mysys
 
@@ -29,9 +27,7 @@
                      :port 8080}})
 
 
-  (zen/get-symbol
-   ztx
-   'k8s.batch.api.k8s.io.v1/JobSpec)
+  (zen/get-symbol ztx 'k8s.batch.api.k8s.io.v1/JobSpec)
 
   (->>
    (zen/errors ztx)
@@ -75,22 +71,14 @@
 
   (openapi/list-schemas ztx "ingres")
 
-  (->> 
+  (->>
    (res/do-expand ztx app)
    (mapcat (fn [res]
            (:errors (zen/validate ztx #{(:k8s/type res)}
                           (dissoc res :k8s/type))))))
 
 
-
-
-
   )
-
-
-
-
-
 
 
 ;; grab schema from https://prometheus.io/docs/prometheus/latest/configuration/configuration/
