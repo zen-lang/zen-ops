@@ -210,7 +210,7 @@
                              (throw (Exception. (pr-str :missed-param x params)))))))
                  (str/join "/"))]
     (if resource
-      (str/replace url #"\{\+resource\}" resource)
+      (str/replace url #"\{\+?resource\}" resource)
         url)))
 
 (defn build-request [ztx op]
