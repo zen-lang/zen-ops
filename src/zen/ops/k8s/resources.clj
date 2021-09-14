@@ -8,7 +8,7 @@
     [{:k8s/type 'k8s.networking.api.k8s.io.v1/Ingress
       :metadata {:name nm :namespace ns}
       :spec {:rules [{:host url
-                      :http {:paths [{:backend {:serviceName nm :servicePort 80}
+                      :http {:paths [{:backend {:service {:name nm :port 80}}
                                       :path "/"}]}}]}}
      {:k8s/type 'k8s.v1/Service
       :metadata {:name nm :namespace ns}

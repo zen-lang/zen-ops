@@ -1,0 +1,9 @@
+{ns k8s
+
+ schema
+ {:zen/tags #{zen/tag zen/schema}
+  :keys {:x-kubernetes-group-version-kind {:type zen/any}}
+
+  }
+
+ }

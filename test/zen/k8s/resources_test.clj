@@ -11,27 +11,6 @@
 
 (defonce k8s-swagger (cheshire.core/parse-string (slurp (io/resource "k8s-swagger.json")) keyword))
 
-(defn effective-schema [ztx sym]
-  (clojure.walk/postwalk
-   (fn [x]
-     (if-let [cfrm  (and (map? x) (first (:confirms x)))]
-       (merge x (effective-schema ztx cfrm))
-       x))
-   (zen/get-symbol ztx sym)))
-
-(defn gen-sample [sch]
-  (cond
-    (= 'zen/map (:type sch))
-    (->> (:keys sch)
-         (reduce (fn [acc [k v]]
-                   (assoc acc k (gen-sample v))
-                   ) {}))
-
-    (= 'zen/vector (:type sch))
-    [(gen-sample (:every sch))]
-
-    :else
-    (:type sch)))
 
 (t/deftest test-k8s-resources
   (def ztx (zen/new-context {}))
@@ -62,11 +41,11 @@
 
   (def app (zen/get-symbol ztx 'mysys/myapp))
 
-  (gen-sample
-   (effective-schema ztx 'k8s.networking.api.k8s.io.v1/Ingress))
+  (zen/get-symbol ztx 'k8s.meta.apis.pkg.apimachinery.k8s.io.v1/Time)
 
-  (gen-sample
-   (effective-schema ztx 'k8s.v1/Pod))
+  (openapi/describe ztx 'k8s.networking.api.k8s.io.v1/Ingress)
+
+  (openapi/describe ztx 'k8s.v1/Pod)
 
   (zen/get-symbol ztx 'k8s.networking.api.k8s.io.v1/Ingress)
   (zen/get-symbol ztx 'k8s.v1/Pod)
@@ -76,8 +55,7 @@
    [{:k8s/type 'k8s.networking.api.k8s.io.v1/Ingress
      :metadata {:name "myapp" :namespace "my"}
      :spec {:rules [{:host "myapp.samurai.io"
-                     :http {:paths [
-                                    {:backend {:service {:name "myapp" :port 80}}
+                     :http {:paths [{:backend {:service {:name "myapp" :port 80}}
                                      :path "/"}]}}]}}
     {:k8s/type 'k8s.v1/Service
      :metadata {:name "myapp" :namespace "my"}

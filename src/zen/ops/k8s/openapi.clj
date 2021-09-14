@@ -3,6 +3,7 @@
    [zen.core :as zen]
    [clojure.string :as str]
    [cheshire.core :as cheshire]
+   [clojure.java.io :as io]
    [clojure.walk]))
 
 
@@ -38,15 +39,20 @@
 
 (defmethod sch2zen :default
   [sch]
-  sch)
+  (if (not (:confirms sch))
+    (assoc sch :type 'zen/any)
+    sch))
 
 (defmethod sch2zen :string
   [sch]
-  (assoc sch :type 'zen/string))
+  (-> (assoc sch :type 'zen/string)
+      (dissoc :format)))
 
 (defmethod sch2zen :integer
   [sch]
-  (assoc sch :type 'zen/integer))
+  (-> 
+   (assoc sch :type 'zen/integer)
+   (dissoc :format)))
 
 (defmethod sch2zen :boolean
   [sch]
@@ -62,7 +68,7 @@
   (let [reqs (into  #{} (mapv keyword req))]
     (cond->
         (merge
-          (dissoc sch :properties :additionalProperties)
+          (dissoc sch :properties :additionalProperties :required)
           {:type 'zen/map})
       props
       (assoc :keys (reduce (fn [acc [k v]]
@@ -74,7 +80,7 @@
       (assoc :values (*sch2zen aprops))
 
       (seq reqs)
-      (assoc :required reqs))))
+      (assoc :require reqs))))
 
 (defmethod sch2zen :array
   [{its :items :as sch}]
@@ -82,19 +88,18 @@
          {:type  'zen/vector
           :every (*sch2zen its)}))
 
-
 (defn schema-to-zen [x]
   (merge (*sch2zen x)
-         {:zen/tags #{'zen/schema 'k8s/schema}
-          :type     (get {"object" 'zen/map} (:type x))
-          :zen/desc (:description x)}))
+         (cond-> {:zen/tags #{'zen/schema 'k8s/schema}
+                  :type (get {"object" 'zen/map} (:type x) 'zen/any)}
+           (:description x) (assoc :zen/desc (:description x)))))
 
-(defn collect-imports [n]
+(defn collect-imports [self n]
   (let [imp (atom #{})]
     (clojure.walk/postwalk
       (fn [x]
         (when-let [n (and (symbol? x) (namespace x))]
-          (when-not (= n "zen")
+          (when-not (contains? #{"zen" (str self)} n)
             (swap! imp conj (symbol n))))
         x) n)
     @imp))
@@ -153,14 +158,38 @@
 
 (defn load-namespaces [ztx openapi]
   (let [nss (load-schemas ztx {} (:definitions openapi))]
-    (load-operations ztx nss (:paths openapi))))
+    nss
+    #_(load-operations ztx nss (:paths openapi))))
+
+
+(defn *update-layer [nss k v]
+  (let [w (get v :w 0)]
+    (->> (get v 'import)
+         (reduce (fn [nss dep]
+                   (if (<= w (get-in nss [dep :w] 0))
+                     (*update-layer (assoc-in nss [dep :w] (dec w))
+                                    dep (assoc (get nss dep) :w (dec w)))
+                     nss))
+                 nss))))
+
+(defn topologica-sort [nss]
+  (->> nss
+       (reduce (fn [nss [k v]] (*update-layer nss k v)) nss)
+       (sort-by (fn [[_ {w :w}]] (or w 0)))))
+
 
 (defn load-openapi [ztx openapi]
   (->> (load-namespaces ztx openapi)
-       (mapv (fn [[_ n]]
-               (zen.core/load-ns
-                 ztx
-                 (assoc n 'imports (collect-imports n)))))))
+       (reduce (fn [acc [k n]]
+                 (assoc acc k (assoc n 'import (collect-imports k n))))
+               {})
+       (topologica-sort)
+       (mapv (fn [[_ n]] (zen.core/load-ns ztx n)))))
+
+(defn load-default-api [ztx]
+  (let [k8s-swagger (cheshire.core/parse-string (slurp (io/resource "k8s-swagger.json")) keyword)]
+    (load-openapi ztx k8s-swagger)
+    :loaded))
 
 (defn build-filter [q]
   (when q (re-pattern (str ".*" (str/join ".*" (mapv str/lower-case (str/split q #"\s+"))) ".*"))))
@@ -188,7 +217,7 @@
   (->> params-def
        (reduce (fn [acc [k pdef]]
                  (let [v (get params k)]
-                   (if (and (:required pdef) (nil? v))
+                   (if (and (:require pdef) (nil? v))
                      (update acc :errors (fn [x] (conj (or x []) (str "Missed parameter " k))))
                      (if v
                        (if-let [errs (and (:schema pdef)
@@ -231,6 +260,31 @@
 (defn api-name [action res]
   (let [[g v] (str/split (:apiVersion res) #"/" 2)]
     (symbol (build-ns-name g v (:kind res)) action)))
+
+(defn effective-schema [ztx sym]
+  (clojure.walk/postwalk
+   (fn [x]
+     (if-let [cfrm  (and (map? x) (first (:confirms x)))]
+       (merge x (effective-schema ztx cfrm))
+       x))
+   (zen/get-symbol ztx sym)))
+
+(defn gen-sample [sch]
+  (cond
+    (= 'zen/map (:type sch))
+    (->> (:keys sch)
+         (reduce (fn [acc [k v]]
+                   (assoc acc k (gen-sample v))
+                   ) {}))
+
+    (= 'zen/vector (:type sch))
+    [(gen-sample (:every sch))]
+
+    :else
+    (or (:type sch) sch)))
+
+(defn describe [ztx sym]
+  (gen-sample (effective-schema ztx sym)))
 
 (comment
 
