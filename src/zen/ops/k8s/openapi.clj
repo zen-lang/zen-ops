@@ -48,6 +48,10 @@
   [sch]
   (assoc sch :type 'zen/integer))
 
+(defmethod sch2zen :boolean
+  [sch]
+  (assoc sch :type 'zen/boolean))
+
 (defmethod sch2zen :number
   [sch]
   (assoc sch :type 'zen/number))

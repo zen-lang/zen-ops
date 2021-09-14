@@ -67,12 +67,12 @@
    (sut/do-expand ztx cmp)
 
    [{:kind "Ingress", :port 300, :namespace "samurai-edge"}
-    {:kind "Deployment", :ns "samurai-edge",
-     :template {:containers {:spec {:image "myapp:samurai-edge"}}}}
+    {:kind "Deployment", :ns "samurai-edge", :template {:containers {:spec {:image "myapp:samurai-edge"}}}}
     {:kind "Service", :ns "samurai-edge", :port 3000}
+
     {:kind "Ingress", :port 300, :namespace "samurai-prod"}
-    {:kind "Deployment", :ns "samurai-prod",
-     :template {:containers {:spec {:image "myapp:samurai-prod"}}}}
+    {:kind "Deployment", :ns "samurai-prod", :template {:containers {:spec {:image "myapp:samurai-prod"}}}}
     {:kind "Service", :ns "samurai-prod", :port 3000}])
 
   )
+

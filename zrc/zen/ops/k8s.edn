@@ -1,0 +1,19 @@
+{ns zen.ops.k8s
+
+ import #{zo}
+
+ web-app
+ {:zen/tags #{zo/def zen/schema}
+  :type zen/map
+  :keys {:image {:type zen/string
+                 :zen/desc "app docker image"}
+         :ns   {:type zen/string}
+         :port {:type zen/integer}
+         :url  {:type zen/string
+                :zen/desc "How to expose server outside"}}
+
+  }
+
+
+
+ }
