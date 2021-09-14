@@ -158,6 +158,22 @@
 (defn build-ns-name [g v k]
   (str/join "." (->> ["k8s" g v k] (remove str/blank?))))
 
+
+(defn split-camel [s]
+  (->> 
+   (str/split  (or s "") #"(?=\p{Upper})")
+   (mapv str/lower-case)))
+
+(defn normalize-op-id [s ks]
+  (let [ks (into #{"core" "apps"} (mapcat split-camel ks))]
+    (->> (split-camel (-> s
+                          (str/replace #"ForAllNamespaces" "All")
+                          (str/replace #"API" "Api")
+                          (str/replace #"Namespaced" "")))
+         (remove #(contains? ks %))
+         (str/join "-")
+         (symbol))))
+
 (defn load-operations [ztx acc paths]
   (->> paths
        (reduce (fn [acc [url {prms :parameters :as ops}]]
@@ -167,17 +183,22 @@
                                   (let [{g :group k :kind v :version} (:x-kubernetes-group-version-kind op)
                                         act (:x-kubernetes-action op)
                                         ns-name  (build-ns-name g v k)
-                                        sym act]
+
+                                        sym (when-let [oid (:operationId op)]
+                                              (when-not (str/blank? oid)
+                                                (normalize-op-id oid (into (str/split (or g "") #"\.") [v k]))))]
                                     (if-not sym
                                       acc
-                                      (-> (update acc (symbol ns-name) merge {'ns (symbol ns-name)})
-                                          (assoc-in [(symbol ns-name) (symbol sym)]
-                                                    (->
-                                                      (dissoc op :operationId :parameters :x-kubernetes-group-version-kind op)
-                                                      (merge {:zen/tags #{'k8s/op}
-                                                              :method   meth
-                                                              :url      (url-template url)
-                                                              :params   (process-params (concat (:parameters op) prms))})))))))
+                                      (let [zop (-> (dissoc op :parameters)
+                                                    (merge {:zen/tags #{'k8s/op}
+                                                            :method   meth
+                                                            :url      (url-template url)
+                                                            :params   (process-params (concat (:parameters op) prms))}))]
+                                        (-> (update acc (symbol ns-name) merge {'ns (symbol ns-name)})
+                                            (update-in [(symbol ns-name) (symbol sym)]
+                                                       (fn [x]
+                                                         (when x (println :WARN :override ns-name sym))
+                                                         zop)))))))
                                 acc))))
                acc)))
 
@@ -212,6 +233,7 @@
 
 (defn load-default-api [ztx]
   (let [k8s-swagger (cheshire.core/parse-string (slurp (io/resource "k8s-swagger.json")) keyword)]
+    (zen/read-ns ztx 'k8s)
     (load-openapi ztx k8s-swagger)
     :loaded))
 

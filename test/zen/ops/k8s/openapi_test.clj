@@ -11,20 +11,17 @@
 (t/deftest test-swagger-to-zen
 
   (def ztx (zen/new-context {}))
-  ;; (def nss (sut/load-namespaces ztx swagger))
-  ;; (->> (keys nss) (sort))
-
-  ;; (get nss 'io.k8s.api.core.v1)
 
   (sut/load-default-api ztx)
 
   (def errors (take 10 (zen/errors ztx)))
   (t/is (empty? errors))
 
+  errors
+
   (comment
-    (sut/list-ops ztx)
-    (sut/list-schemas ztx)
-    )
+    (sut/list-ops ztx "v1.pod")
+    (sut/list-schemas ztx))
 
   (matcho/match
     (zen/get-symbol ztx 'k8s.v1/Pod)
@@ -35,13 +32,6 @@
     (zen/get-symbol ztx 'k8s.v1.Pod/list)
     {:zen/tags #{'k8s/op},
      :zen/name 'k8s.v1.Pod/list})
-
-  ;; apps.v1.StatefulSet/post
-  ;; 'io.k8s.api.apps.v1/StatefulSetStatus
-  ;;  io.k8s.api.apps.v1.StatefulSet/deletecollection
-
-  ;; batch.v1.Job/watch
-  ;; 'io.k8s.api.batch.v1/Job
 
   (t/is (seq (zen/get-tag ztx 'k8s/op)))
   (t/is (seq (zen/get-tag ztx 'k8s/schema)))
@@ -120,12 +110,17 @@
                             :shortNames ["ct"]}}})
 
   (t/is
-   (zen/get-symbol
-    ztx
-    (sut/api-name "get"
-                  {:apiVersion "apps/v1",
-                   :kind       "Deployment",
-                   :metadata   {:name "nginx-deployment", :labels {:app "nginx"}},
-                   :spec {}})))
+   (zen/get-symbol ztx
+                   (sut/api-name
+                    "read"
+                    {:apiVersion "apps/v1",
+                     :kind       "Deployment",
+                     :metadata   {:name "nginx-deployment", :labels {:app "nginx"}},
+                     :spec {}})))
+
+  (zen/get-symbol ztx 'k8s.batch.v2alpha1.CronJob/patch)
+  (zen/get-symbol ztx 'k8s/get-v1-api-resources)
+
+
 
   )
