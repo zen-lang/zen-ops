@@ -31,10 +31,30 @@
       last
       (k8s-name2zen)))
 
-(defn *sch2zen [{desc :description ref :$ref :as sch}]
-  (-> (dissoc sch :description :$ref)
+(defn *sch2zen [{desc :description ref :$ref
+                 k8s-lmk :x-kubernetes-list-map-keys
+                 k8s-lt :x-kubernetes-list-type
+                 k8s-pmk :x-kubernetes-patch-merge-key
+                 k8s-ps :x-kubernetes-patch-strategy
+                 k8s-u :x-kubernetes-unions
+                 k8s-gvk :x-kubernetes-group-version-kind
+                 :as sch}]
+  (-> (dissoc sch :description :$ref
+              :x-kubernetes-list-map-keys
+              :x-kubernetes-list-type
+              :x-kubernetes-patch-merge-key
+              :x-kubernetes-patch-strategy
+              :x-kubernetes-group-version-kind
+              :x-kubernetes-unions)
       (cond-> desc (assoc :zen/desc desc)
-              ref (assoc :confirms #{(ref2sym ref)}))
+              ref (assoc :confirms #{(ref2sym ref)})
+              k8s-lmk (assoc :k8s/list-map-keys k8s-lmk)
+              k8s-lt (assoc :k8s/list-type k8s-lt)
+              k8s-pmk (assoc :k8s/patch-merge-key k8s-pmk)
+              k8s-ps (assoc :k8s/patch-strategy k8s-ps)
+              k8s-u (assoc :k8s/unions k8s-u)
+              k8s-gvk (assoc :k8s/api k8s-gvk)
+              )
       (sch2zen)))
 
 (defmethod sch2zen :default
@@ -111,7 +131,12 @@
                  (let [[ns sym] (build-schema-name k)]
                    (-> acc
                        (update  ns merge {'ns ns})
-                       (assoc-in [ns sym] (schema-to-zen v)))))
+                       (assoc-in [ns sym]
+                                 (if (= sym 'JSONSchemaProps)
+                                   {:zen/tags #{'zen/schema}
+                                    :zen/desc "TODO: json-schema conv"
+                                    :type 'zen/any}
+                                   (schema-to-zen v))))))
                acc)))
 
 (defn url-template [url]

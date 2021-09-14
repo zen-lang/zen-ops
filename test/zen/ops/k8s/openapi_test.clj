@@ -20,26 +20,17 @@
 
   (def errors (take 10 (zen/errors ztx)))
   (t/is (empty? errors))
-  errors
 
-  (zen/get-symbol ztx 'k8s.certificates.api.k8s.io.v1beta1/CertificateSigningRequestList)
-  (zen/get-symbol ztx 'k8s.api.pkg.apimachinery.k8s.io.resource/Quantity)
-  (zen/get-symbol ztx 'k8s.certificates.api.k8s.io.v1/CertificateSigningRequestStatus)
-  (zen/get-symbol ztx 'k8s.autoscaling.api.k8s.io.v2beta1/ResourceMetricStatus)
-  (zen/get-symbol ztx 'k8s.apiextensions.apis.pkg.apiextensions-apiserver.k8s.io.v1/JSONSchemaProps)
-  (zen/get-symbol ztx 'k8s.rbac.api.k8s.io.v1alpha1/RoleBinding)
-  (zen/get-symbol ztx 'k8s.rbac.api.k8s.io.v1alpha1/PolicyRule)
-
-  (zen/get-symbol ztx 'zen/map)
-
-  (sut/list-ops ztx)
-  (sut/list-schemas ztx)
+  (comment
+    (sut/list-ops ztx)
+    (sut/list-schemas ztx)
+    )
 
   (matcho/match
     (zen/get-symbol ztx 'k8s.v1/Pod)
     {:zen/tags #{'zen/schema 'k8s/schema},
      :zen/name 'k8s.v1/Pod})
-  
+
   (matcho/match
     (zen/get-symbol ztx 'k8s.v1.Pod/list)
     {:zen/tags #{'k8s/op},
