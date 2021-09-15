@@ -1,5 +1,6 @@
 (ns zen.ops.k8s.resources
-  (:require [zen.ops.resource :as res]))
+  (:require [zen.ops.resource :as res]
+            clj-yaml.core))
 
 (defmethod res/expand
   'zen.ops.k8s/web-app
@@ -99,31 +100,38 @@
         {:name "prometheus-data",
          :persistentVolumeClaim {:claimName "prometheus-data"}}]}}}}
 
-   {:k8s/type 'k8s.v1/ConfigMap
-    :metadata {:name "prometheus-config"
-               :namespace "monitoring"}
-    :data {:prometheus-config.yaml
-           {:op/type 'zen.ops.k8s/prometheus-config
-            :global {:scrape_interval "15s", :evaluation_interval "15s"},
-            :scrape_configs [{:scrape_interval "10s"
-                              :bearer_token_file "/var/run/secrets/kubernetes.io/serviceaccount/token"
-                              :tls_config {:ca_file "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"}
-                              :kubernetes_sd_configs [{:role "node"}]
-                              :job_name "kubernetes-nodes-cadvisor"
-                              :scrape_timeout "10s"
-                              :relabel_configs [{:action "labelmap" :regex "__meta_kubernetes_node_label_(.+)"}]
-                              :metric_relabel_configs [{:action "replace"
-                                                        :source_labels ["id"]
-                                                        :regex "^/machine\\.slice/machine-rkt\\\\x2d([^\\\\]+)\\\\.+/([^/]+)\\.service$"
-                                                        :target_label "rkt_container_name"
-                                                        :replacement "${2}-${1}"}
-                                                       {:action "replace"
-                                                        :source_labels ["id"]
-                                                        :regex "^/system\\.slice/(.+)\\.service$"
-                                                        :target_label "systemd_service_name"
-                                                        :replacement "${1}"}]
-                              :metrics_path "/metrics/cadvisor"
-                              :scheme "https"}]}}}])
+   {:zo/type 'zen.ops.k8s/config-yaml
+    :name "prometheus-config"
+    :ns "monitoring"
+    :data {:global {:scrape_interval "15s", :evaluation_interval "15s"},
+           :scrape_configs [{:scrape_interval "10s"
+                             :bearer_token_file "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                             :tls_config {:ca_file "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"}
+                             :kubernetes_sd_configs [{:role "node"}]
+                             :job_name "kubernetes-nodes-cadvisor"
+                             :scrape_timeout "10s"
+                             :relabel_configs [{:action "labelmap" :regex "__meta_kubernetes_node_label_(.+)"}]
+                             :metric_relabel_configs [{:action "replace"
+                                                       :source_labels ["id"]
+                                                       :regex "^/machine\\.slice/machine-rkt\\\\x2d([^\\\\]+)\\\\.+/([^/]+)\\.service$"
+                                                       :target_label "rkt_container_name"
+                                                       :replacement "${2}-${1}"}
+                                                      {:action "replace"
+                                                       :source_labels ["id"]
+                                                       :regex "^/system\\.slice/(.+)\\.service$"
+                                                       :target_label "systemd_service_name"
+                                                       :replacement "${1}"}]
+                             :metrics_path "/metrics/cadvisor"
+                             :scheme "https"}]}}])
+
+
+(defmethod res/expand
+  'zen.ops.k8s/config-yaml
+  [ztx {nm :name ns :ns data :data}]
+  [{:k8s/type 'k8s.v1/ConfigMap
+   :metadata {:name nm 
+              :namespace ns}
+   :data {(keyword (str nm ".yaml")) (clj-yaml.core/generate-string data)}}])
 
 (comment
   (map clj-yaml.core/parse-string (clojure.string/split (slurp "configuration.yaml") #"---")))
