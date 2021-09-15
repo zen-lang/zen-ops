@@ -53,7 +53,7 @@
               k8s-pmk (assoc :k8s/patch-merge-key k8s-pmk)
               k8s-ps (assoc :k8s/patch-strategy k8s-ps)
               k8s-u (assoc :k8s/unions k8s-u)
-              k8s-gvk (assoc :k8s/api k8s-gvk)
+              k8s-gvk (assoc :k8s/api k8s-gvk :zen/tags #{'k8s/resource})
               )
       (sch2zen)))
 
@@ -108,11 +108,15 @@
          {:type  'zen/vector
           :every (*sch2zen its)}))
 
+(into #{:a} #{:b})
+
 (defn schema-to-zen [x]
-  (merge (*sch2zen x)
-         (cond-> {:zen/tags #{'zen/schema 'k8s/schema}
-                  :type (get {"object" 'zen/map} (:type x) 'zen/any)}
-           (:description x) (assoc :zen/desc (:description x)))))
+  (let [zsch (*sch2zen x)]
+    (merge  zsch
+            (cond-> {:zen/tags (cond-> #{'zen/schema 'k8s/schema}
+                                 (:zen/tags zsch) (into (:zen/tags zsch)))
+                     :type (get {"object" 'zen/map} (:type x) 'zen/any)}
+              (:description x) (assoc :zen/desc (:description x))))))
 
 (defn collect-imports [self n]
   (let [imp (atom #{})]
@@ -156,7 +160,15 @@
                {})))
 
 (defn build-ns-name [g v k]
-  (str/join "." (->> ["k8s" g v k] (remove str/blank?))))
+  (let [g (when g
+            (-> g
+                (str/replace #"authorization\." "api.")
+                (str/replace #"networking\.k8s\.io"
+                             "networking.api.k8s.io")
+                (str/replace #"events\.k8s\.io" "events.api.k8s.io")
+                (str/replace #"batch\.k8s\.io" "batch")
+                ))]
+    (str/join "." (->> ["k8s" g v k] (remove str/blank?)))))
 
 
 (defn split-camel [s]
@@ -255,6 +267,10 @@
   (->> (zen/get-tag ztx 'k8s/schema)
        (ilike-filter q)))
 
+(defn list-resources [ztx & [q]]
+  (->> (zen/get-tag ztx 'k8s/resource)
+       (ilike-filter q)))
+
 (defn op-def [ztx m]
   (let [m (if (map? m) (:method m) m)
         op-def (zen/get-symbol ztx (symbol m))]
@@ -298,11 +314,13 @@
 
 
 (defn validate [ztx res]
-  (let [[g v] (str/split (:apiVersion res) #"/" 2)
-        sym (symbol (build-ns-name g v nil) (:kind res))]
-    (if (zen/get-symbol ztx sym)
-      (assoc (zen/validate ztx #{sym} res) :zen/name sym)
-      {:errors [{:message (str "Could not find schema for " sym)}]})))
+  (if-let [tp (:k8s/type res)]
+    (assoc (zen/validate ztx #{tp} (dissoc res :k8s/type)) :zen/name tp)
+    (let [[g v] (str/split (:apiVersion res) #"/" 2)
+          sym (symbol (build-ns-name g v nil) (:kind res))]
+      (if (zen/get-symbol ztx sym)
+        (assoc (zen/validate ztx #{sym} res) :zen/name sym)
+        {:errors [{:message (str "Could not find schema for " sym)}]}))))
 
 
 (defn api-name [action res]

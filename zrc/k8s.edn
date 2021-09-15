@@ -33,6 +33,10 @@
  {:zen/tags #{zen/tag zen/schema}
   :type zen/map}
 
+ resource
+ {:zen/tags #{zen/tag zen/schema}
+  :type zen/map}
+
  op
  {:zen/tags #{zen/tag}}
 
