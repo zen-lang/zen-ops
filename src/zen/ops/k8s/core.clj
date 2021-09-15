@@ -22,6 +22,7 @@
 (def op-def openapi/op-def)
 
 (def validate openapi/validate)
+(def describe openapi/describe)
 
 (defn request [ztx conn req]
   (let [{u :url t :token} conn]
