@@ -13,15 +13,4 @@
                 :zen/desc "How to expose server outside"}}
 
   }
-
- prometheus 
- {:zen/tags #{zo/def zen/schema}
-  :type zen/map
-  :keys {:ns   {:type zen/string}
-         :storage {:type zen/string}}
-
-  }
-
-
-
  }
