@@ -1,9 +1,8 @@
 (ns zen.ops.k8s.openapi-test
   (:require [zen.ops.k8s.openapi :as sut]
             [zen.core :as zen]
+            [zen.ops.k8s.core :as k8s]
             [matcho.core :as matcho]
-            [cheshire.core :as cheshire]
-            [clojure.java.io :as io]
             [clojure.test :as t]))
 
 
@@ -11,8 +10,7 @@
 (t/deftest test-swagger-to-zen
 
   (def ztx (zen/new-context {}))
-
-  (sut/load-default-api ztx)
+  (k8s/init-context ztx {})
 
   (def errors (take 10 (zen/errors ztx)))
   (t/is (empty? errors))
@@ -110,17 +108,30 @@
                             :shortNames ["ct"]}}})
 
   (t/is
-   (zen/get-symbol ztx
-                   (sut/api-name
-                    "read"
-                    {:apiVersion "apps/v1",
-                     :kind       "Deployment",
-                     :metadata   {:name "nginx-deployment", :labels {:app "nginx"}},
-                     :spec {}})))
+   (zen/get-symbol
+    ztx
+    (sut/api-name "read" {:apiVersion "apps/v1",
+                          :kind       "Deployment",
+                          :metadata   {:name "nginx-deployment", :labels {:app "nginx"}},
+                          :spec {}})))
+
+  (t/is
+   (zen/get-symbol
+    ztx
+    (sut/api-name
+     "read"
+     {:k8s/type 'k8s.apps.v1/Deployment
+      :kind       "Deployment",
+      :metadata   {:name "nginx-deployment", :labels {:app "nginx"}},
+      :spec {}})))
+  
 
   (zen/get-symbol ztx 'k8s.batch.v2alpha1.CronJob/patch)
   (zen/get-symbol ztx 'k8s/get-v1-api-resources)
 
+  (sut/list-schemas ztx "service")
+
+  
 
 
   )

@@ -240,18 +240,20 @@
 (defn build-filter [q]
   (when q (re-pattern (str ".*" (str/join ".*" (mapv str/lower-case (str/split q #"\s+"))) ".*"))))
 
-(defn list-ops [ztx & [q]]
+(defn ilike-filter [q xs]
   (let [q (build-filter q)]
-    (->> (cond->> (zen/get-tag ztx 'k8s/op)
+    (->> (cond->> xs
            q (filterv (fn [x]
                         (not (nil? (re-matches q (str/lower-case (str x))))))))
          (sort))))
 
+(defn list-ops [ztx & [q]]
+  (->> (zen/get-tag ztx 'k8s/op)
+       (ilike-filter q)))
+
 (defn list-schemas [ztx & [q]]
-  (->>
-    (cond->> (zen/get-tag ztx 'k8s/schema)
-      q (filter (fn [x] (str/includes? (str/lower-case (str x)) q))))
-    (sort)))
+  (->> (zen/get-tag ztx 'k8s/schema)
+       (ilike-filter q)))
 
 (defn op-def [ztx m]
   (let [m (if (map? m) (:method m) m)
@@ -304,8 +306,10 @@
 
 
 (defn api-name [action res]
-  (let [[g v] (str/split (:apiVersion res) #"/" 2)]
-    (symbol (build-ns-name g v (:kind res)) action)))
+  (if-let [tp (:k8s/type res)]
+    (symbol (str (namespace tp) "." (name tp)) action)
+    (let [[g v] (str/split (:apiVersion res) #"/" 2)]
+      (symbol (build-ns-name g v (:kind res)) action))))
 
 (defn effective-schema [ztx sym]
   (clojure.walk/postwalk

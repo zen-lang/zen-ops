@@ -9,29 +9,10 @@
 
 
 (def build-request openapi/build-request)
-(defn request [ztx req]
-  (let [{u :kube/url t :kube/token} (:kube/config @ztx)]
-    (-> @(http/request (merge req {:url (str u "/" (:url req))
-                                   :headers (cond-> {}
-                                              t (assoc "Authorization" (str "Bearer " t)))}))
-        (update :body (fn [x]
-                        (when x (cheshire/parse-string x keyword)))))))
 
-;; TODO: replace with init
-(defn new-context [config]
-  (let [ztx (zen.core/new-context {:kube/config config})]
-    (openapi/load-default-api ztx)
-    ztx))
 
-(defn load-cluster-api [ztx]
-  (let [config (:kube/config @ztx)
-        openapi-resp (request ztx {:method :get :url "openapi/v2"
-                                   :headers {"authorization" (str "Bearer " (:kube/token config))}})]
-    (if (= 200 (:status openapi-resp))
-      (do
-        (openapi/load-openapi ztx (:body openapi-resp))
-        ztx)
-      (throw (Exception. (pr-str openapi-resp))))))
+(defn init-context [ztx opts]
+  (openapi/load-default-api ztx))
 
 
 (def list-ops openapi/list-ops)
@@ -42,8 +23,25 @@
 
 (def validate openapi/validate)
 
-(defn op [ztx req]
-  (let [res (request ztx (build-request ztx req))]
+(defn request [ztx conn req]
+  (let [{u :url t :token} conn]
+    (-> @(http/request (merge req {:url (str u "/" (:url req))
+                                   :headers (cond-> {}
+                                              t (assoc "Authorization" (str "Bearer " t)))}))
+        (update :body (fn [x]
+                        (when x (cheshire/parse-string x keyword)))))))
+
+(defn load-cluster-api [ztx conn]
+  (let [openapi-resp (request ztx conn {:method :get :url "openapi/v2"})]
+    (if (= 200 (:status openapi-resp))
+      (do
+        (openapi/load-openapi ztx (:body openapi-resp))
+        ztx)
+      (throw (Exception. (pr-str openapi-resp))))))
+
+
+(defn op [ztx conn req]
+  (let [res (request ztx conn (build-request ztx req))]
     (if (and (:status res) (< (:status res) 300))
       {:result (-> res :body)}
       {:error (or (:body res) res)})))
@@ -66,29 +64,52 @@
     (println "ERROR:" (:error err)))
   res)
 
-;; TODO: rename to apply
-(defn update-resource [ktx resource]
-  (let [metadata (select-keys (:metadata resource) [:name :namespace])
-        read-op (openapi/api-name "read" resource)
-        {err :error old-resource :result :as resp} (op ktx {:method read-op 
-                                                      :params metadata})]
-    (if (= 404 (:code err))
-      (print-error (op ktx {:method (openapi/api-name "create" resource)
-                            :params (cond-> {:body resource}
-                                      (:namespace metadata)
-                                      (assoc :namespace (:namespace metadata)))}))
-      (let [diff (matcho/match*  old-resource resource)]
-        (if (not (empty? diff))
-          (print-error (op ktx
-                           {:method (openapi/api-name "replace" resource)
-                            :params (assoc metadata :body resource)}))
-          (print-error resp))))))
+(defn do-apply [ktx conn resource]
+  (if (sequential? resource)
+    (mapv (fn [res] (do-apply ktx conn res)) resource)
+    (let [metadata (select-keys (:metadata resource) [:name :namespace])
+          read-op (openapi/api-name "read" resource)
+          create-op (openapi/api-name "create" resource)
+          replace-op (openapi/api-name "replace" resource)
+          resource (dissoc resource :k8s/type)
+          {err :error old-resource :result :as resp} (op ktx conn {:method read-op :params metadata})]
+      (print-error
+       (if (= 404 (:code err))
+         (op ktx conn
+             {:method create-op
+              :params (cond-> {:body resource}
+                        (:namespace metadata)
+                        (assoc :namespace (:namespace metadata)))})
+         (let [diff (matcho/match*  old-resource resource)]
+           (if (not (empty? diff))
+             (op ktx conn
+                 {:method replace-op
+                  :params (assoc metadata :body resource)})
+             resp)))))))
 
 (comment
 
+  (def conn {:url "http://localhost:8080"})
 
+  (def ztx (zen/new-context {}))
+  (init-context ztx {})
 
+  (list-ops ztx "pod list")
 
+  (->>
+   (op ztx conn {:method 'k8s.v1.Pod/list-all})
+   (items))
+
+  (list-schemas ztx "namespac")
+
+  (do-apply ztx conn
+            {:k8s/type 'k8s.v1/Namespace
+             :metadata {:name "test"
+                        :labels {:managedBy "zenops"}}})
+
+  (->>
+   (op ztx conn {:method 'k8s.v1.Namespace/list})
+   (items))
 
 
 

@@ -67,10 +67,10 @@
          [])
        (str/join "&")))
 
-(defn exec [ztx opts]
+(defn exec [ztx conn opts]
   (let [req (ClientUpgradeRequest.)
-        url (get-in  @ztx [:kube/config :kube/url])
-        _ (when-let [t (:kube/token (:kube/config @ztx))]
+        url (:url conn)
+        _ (when-let [t (:token conn)]
             (.setHeader req "Authorization" (str "Bearer " t)))
         query (query-string (:params opts))
         uri (-> (str url "/" (zen.ops.k8s.openapi/render-url ["api" "v1" "namespaces" :namespace "pods" :name "exec"] opts))
