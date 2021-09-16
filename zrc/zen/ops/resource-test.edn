@@ -8,7 +8,8 @@
   :require #{:image :ns}
   :keys {:image {:type zen/string}
          :ns {:type zen/string}
-         :port  {:type zen/integer}}}
+         :port  {:type zen/integer}
+         :env {:type zen/any}}}
 
  app
  {:zen/tags #{zo/res}
@@ -42,24 +43,17 @@
   :zo/type Comp
   :name "samurai"}
 
- ;; myapp
- ;; {:zen/tags #{zo.k8s/app}
- ;;  :zo/params {:type zen/map
- ;;              :keys {:storage {}
- ;;                     :version {}
- ;;                     :data-dir {}}}
- ;;  :zo/defaults {:version "1.0"
- ;;                :storage {:val 100 :unit :Gi}
- ;;                :data-dir "/data"}
- ;;  :image (zo/path "myimage" (zo/var :version))
- ;;  :cpu [2 2]
- ;;  :memory [0.4 1]
- ;;  :env {:DATA (zo/var :data-dir)}
- ;;  :secrets {:PASSWORD (zo/secret)}
- ;;  :volumes {:data {:zo/type hs.k8s/volume
- ;;                   :storage (zo/var :storage)
- ;;                   :mount   (zo/var :data-dir)}}}
+ env {:zen/tags #{zo/fmt}}
 
+ app-fmt
+ {:zen/tags #{zo/res}
+  :zo/type App
+  :image "myimage"
+  :ns "default"
+  :port 8080
+  :env {:zo/fmt env
+        :HOME "/home"
+        :DATA "/data"}}
 
 
 

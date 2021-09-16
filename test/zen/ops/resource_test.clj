@@ -11,7 +11,8 @@
   [ztx res]
   [{:kind "Deployment"
     :ns (:ns res)
-    :template {:containers {:spec {:image (:image res)}}}}
+    :template {:containers {:spec {:image (:image res)
+                                   :env (:env res)}}}}
    {:kind "Service"
     :ns (:ns res)
     :port (:port res)}])
@@ -35,6 +36,14 @@
    {:zo/type 'zen.ops.resource-test/Sys
     :ns (str (:name res) "-prod")
     :version (str (:name res) "-prod")}])
+
+(defmethod sut/format
+  'zen.ops.resource-test/env
+  [ztx _ envs]
+  (->> envs
+       (mapv (fn [[k v]] {:name (if (keyword? k) (subs (str k) 1) (str k))
+                         :value (str v)}))))
+
 
 (t/deftest test-resource
   (def ztx (zen/new-context {}))
@@ -73,6 +82,30 @@
     {:kind "Ingress", :port 300, :namespace "samurai-prod"}
     {:kind "Deployment", :ns "samurai-prod", :template {:containers {:spec {:image "myapp:samurai-prod"}}}}
     {:kind "Service", :ns "samurai-prod", :port 3000}])
+
+
+  (matcho/match
+   (sut/do-format
+    ztx {:some-key {:nested {:zo/fmt 'zen.ops.resource-test/env
+                             :ENV "one"
+                             :TWO "two"}}})
+   {:some-key {:nested [{:name "ENV", :value "one"}
+                        {:name "TWO", :value "two"}]}})
+
+
+  (def appf (zen/get-symbol ztx 'zen.ops.resource-test/app-fmt))
+
+  (matcho/match
+   (sut/do-expand ztx appf)
+   [{:kind "Deployment",
+     :ns "default",
+     :template
+     {:containers
+      {:spec
+       {:image "myimage",
+        :env [{:name "HOME", :value "/home"} {:name "DATA", :value "/data"}]}}}}
+    {:kind "Service", :ns "default", :port 8080}])
+
 
   )
 

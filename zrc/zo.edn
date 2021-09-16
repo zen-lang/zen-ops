@@ -1,6 +1,7 @@
 {ns zo
 
  def {:zen/tags #{zen/tag}}
+ fmt {:zen/tags #{zen/tag}}
 
  res {:zen/tags #{zen/tag zen/schema}
       :type zen/map
