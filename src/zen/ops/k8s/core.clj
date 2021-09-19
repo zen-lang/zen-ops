@@ -38,7 +38,8 @@
       (do
         (openapi/load-openapi ztx (:body openapi-resp))
         ztx)
-      (throw (Exception. (pr-str openapi-resp))))))
+      (throw (Exception. (pr-str openapi-resp))))
+    (:body openapi-resp)))
 
 
 (defn op [ztx conn req]
@@ -49,12 +50,14 @@
 
 (defn items
   ([ks res]
-   (->> res
-        (:result)
-        (:items)
-        (mapv (fn [x]
-                (into [(get-in x [:metadata :name])]
-                      (->> ks (mapv #(get-in x %))))))))
+   (if-let [err (:error res)]
+     err
+     (->> res
+          (:result)
+          (:items)
+          (mapv (fn [x]
+                  (into [(get-in x [:metadata :name])]
+                        (->> ks (mapv #(get-in x %)))))))))
   ([res] (items [] res)))
 
 
@@ -85,7 +88,11 @@
            (if (not (empty? diff))
              (op ktx conn
                  {:method replace-op
-                  :params (assoc metadata :body resource)})
+                  :params (assoc metadata :body
+                                 (cond-> resource
+                                   (get-in old-resource [:metadata :resourceVersion])
+                                   (assoc-in [:metadata :resourceVersion]
+                                             (get-in old-resource [:metadata :resourceVersion]))))})
              resp)))))))
 
 (comment
@@ -95,17 +102,23 @@
   (def ztx (zen/new-context {}))
   (init-context ztx {})
 
-  (list-ops ztx "pod list")
+  (list-ops ztx "depl")
+
+  (list-schemas ztx "ingres")
+
+  (zen/get-symbol ztx 'k8s.networking.api.k8s.io.v1/Ingress)
+
+  (describe ztx 'k8s.networking.api.k8s.io.v1/Ingress)
 
   (->>
-   (op ztx conn {:method 'k8s.v1.Pod/list-all})
-   (items))
+   (op ztx conn {:method 'k8s.apps.v1.Deployment/list-all})
+   #_(items))
 
   (list-schemas ztx "namespac")
 
   (do-apply ztx conn
             {:k8s/type 'k8s.v1/Namespace
-             :metadata {:name "test"
+             :metadata {:name "myns"
                         :labels {:managedBy "zenops"}}})
 
   (->>

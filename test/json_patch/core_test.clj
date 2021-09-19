@@ -35,8 +35,6 @@
     (sut/*get-in {:a 1} []))
 
 
-  
-
   (testing "patch"
     (is-match
      {:a "v1"} [{:op "replace" :path "/a" :value "v2"}]

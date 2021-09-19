@@ -50,6 +50,7 @@
   (zen/read-ns ztx 'zen.ops.resource-test)
 
   (def app (zen/get-symbol ztx 'zen.ops.resource-test/app))
+  app
 
   (t/is (empty? (zen/errors ztx)))
 
@@ -61,9 +62,11 @@
     {:kind "Service"
      :port 8080}])
 
-
   ;; testing recursive expand
   (def sys (zen/get-symbol ztx 'zen.ops.resource-test/sys))
+
+  sys
+
   (matcho/match
    (sut/do-expand ztx sys)
    [{:kind "Ingress", :port 300}
@@ -89,11 +92,13 @@
     ztx {:some-key {:nested {:zo/fmt 'zen.ops.resource-test/env
                              :ENV "one"
                              :TWO "two"}}})
+
    {:some-key {:nested [{:name "ENV", :value "one"}
                         {:name "TWO", :value "two"}]}})
 
 
   (def appf (zen/get-symbol ztx 'zen.ops.resource-test/app-fmt))
+  appf
 
   (matcho/match
    (sut/do-expand ztx appf)

@@ -7,31 +7,48 @@
    [clojure.walk]))
 
 
-(defmulti sch2zen (fn [x] (keyword (:type x))))
+(defmulti sch2zen (fn [grp-idx x] (keyword (:type x))))
 
+(defn build-groups-idx [api]
+  (->>
+   (:definitions api)
+   (reduce
+    (fn [acc [k v]]
+      (let [{g :group} (first (:x-kubernetes-group-version-kind v))
+            parts (str/split (subs (str k) 1) #"\.")
+            n (str/join "." (drop-last 2 parts))]
+        (if (nil? g)
+          acc
+          (update acc n (fn [x]
+                          (when (and (not (nil? x))
+                                     (not (= x g)))
+                            (println :override x g))
+                          g)))))
+    {})))
 
-(defn normalize-ns [s]
-  (-> s
-      (str/replace #"core\.api\.k8s\.io\." "")
-      (str/replace #"apps\.api\.k8s\.io\." "apps.")))
+(defn normalize-group [_g]
+  (when _g
+    (->
+     (str/replace _g #"^io\.k8s\.apimachinery\.pkg" "k8s.v1")
+     (str/replace   #"\.k8s\.io" ""))))
 
-(defn build-schema-name [k]
-  (let [k (if (keyword? k) (subs (str k) 1) k)
-        [sym v & api] (reverse (str/split k  #"\."))]
-    [(symbol (normalize-ns (str "k8s." (str/join "." api) "." v)))
-     (symbol sym)]))
+(defn translate-ns [grps-map k]
+  (let [parts (str/split (if (keyword? k) (subs (str k) 1) k) #"\.")
+        [_k _v & _] (reverse parts)
+        _g (str/join "." (into [] (drop-last 2 parts)))]
+    (if-let [g (get grps-map _g)]
+      [(symbol (->
+         (str "k8s." (if (str/blank? g) "" (str g ".")) _v )
+         (normalize-group)))
+       (symbol _k)]
+      [(symbol (normalize-group _g))
+       (symbol _k)])))
 
-(defn k8s-name2zen [k]
-  (apply symbol (mapv str (build-schema-name k))))
+(defn ref2sym [grp-idx ref]
+  (let [sym (-> ref (str/split #"/") last)]
+    (apply symbol (mapv str (translate-ns grp-idx sym)))))
 
-
-(defn ref2sym [ref]
-  (-> ref
-      (str/split #"/")
-      last
-      (k8s-name2zen)))
-
-(defn *sch2zen [{desc :description ref :$ref
+(defn *sch2zen [grp-idx {desc :description ref :$ref
                  k8s-lmk :x-kubernetes-list-map-keys
                  k8s-lt :x-kubernetes-list-type
                  k8s-pmk :x-kubernetes-patch-merge-key
@@ -47,7 +64,7 @@
               :x-kubernetes-group-version-kind
               :x-kubernetes-unions)
       (cond-> desc (assoc :zen/desc desc)
-              ref (assoc :confirms #{(ref2sym ref)})
+              ref (assoc :confirms #{(ref2sym grp-idx ref)})
               k8s-lmk (assoc :k8s/list-map-keys k8s-lmk)
               k8s-lt (assoc :k8s/list-type k8s-lt)
               k8s-pmk (assoc :k8s/patch-merge-key k8s-pmk)
@@ -55,35 +72,35 @@
               k8s-u (assoc :k8s/unions k8s-u)
               k8s-gvk (assoc :k8s/api k8s-gvk :zen/tags #{'k8s/resource})
               )
-      (sch2zen)))
+      (->> (sch2zen grp-idx ))))
 
 (defmethod sch2zen :default
-  [sch]
+  [grp-idx sch]
   (if (not (:confirms sch))
     (assoc sch :type 'zen/any)
     sch))
 
 (defmethod sch2zen :string
-  [sch]
+  [grp-idx sch]
   (-> (assoc sch :type 'zen/string)
       (dissoc :format)))
 
 (defmethod sch2zen :integer
-  [sch]
+  [grp-idx sch]
   (-> 
    (assoc sch :type 'zen/integer)
    (dissoc :format)))
 
 (defmethod sch2zen :boolean
-  [sch]
+  [grp-idx sch]
   (assoc sch :type 'zen/boolean))
 
 (defmethod sch2zen :number
-  [sch]
+  [grp-idx sch]
   (assoc sch :type 'zen/number))
 
 (defmethod sch2zen :object
-  [{req :required props :properties aprops :additionalProperties :as sch}]
+  [grp-idx {req :required props :properties aprops :additionalProperties :as sch}]
 
   (let [reqs (into  #{} (mapv keyword req))]
     (cond->
@@ -92,26 +109,26 @@
           {:type 'zen/map})
       props
       (assoc :keys (reduce (fn [acc [k v]]
-                        (assoc acc k (*sch2zen v)))
+                        (assoc acc k (*sch2zen grp-idx v)))
                       {} props))
 
 
       aprops
-      (assoc :values (*sch2zen aprops))
+      (assoc :values (*sch2zen grp-idx aprops))
 
       (seq reqs)
       (assoc :require reqs))))
 
 (defmethod sch2zen :array
-  [{its :items :as sch}]
+  [grp-idx {its :items :as sch}]
   (merge (dissoc sch :items)
          {:type  'zen/vector
-          :every (*sch2zen its)}))
+          :every (*sch2zen grp-idx its)}))
 
 (into #{:a} #{:b})
 
-(defn schema-to-zen [x]
-  (let [zsch (*sch2zen x)]
+(defn schema-to-zen [grp-idx x]
+  (let [zsch (*sch2zen grp-idx x)]
     (merge  zsch
             (cond-> {:zen/tags (cond-> #{'zen/schema 'k8s/schema}
                                  (:zen/tags zsch) (into (:zen/tags zsch)))
@@ -129,10 +146,10 @@
     @imp))
 
 
-(defn load-schemas [ztx acc schemas]
+(defn load-schemas [ztx grp-idx acc schemas]
   (->> schemas
        (reduce (fn [acc [k v]]
-                 (let [[ns sym] (build-schema-name k)]
+                 (let [[ns sym] (translate-ns grp-idx k)]
                    (-> acc
                        (update  ns merge {'ns ns})
                        (assoc-in [ns sym]
@@ -140,7 +157,7 @@
                                    {:zen/tags #{'zen/schema}
                                     :zen/desc "TODO: json-schema conv"
                                     :type 'zen/any}
-                                   (schema-to-zen v))))))
+                                   (schema-to-zen grp-idx v))))))
                acc)))
 
 (defn url-template [url]
@@ -151,24 +168,16 @@
                         (str/ends-with? x "}"))
                  (keyword (subs x 1 (dec (count x))))
                  x)))))
-(defn process-params [params]
+(defn process-params [grp-idx params]
   (->> params
        (reduce (fn [acc {nm :name :as prm}]
                  (let [k (keyword nm)]
                    (-> acc (assoc k (cond-> (dissoc prm :name)
-                                      (:schema prm) (assoc :schema (*sch2zen prm)))))))
+                                      (:schema prm) (assoc :schema (*sch2zen grp-idx prm)))))))
                {})))
 
 (defn build-ns-name [g v k]
-  (let [g (when g
-            (-> g
-                (str/replace #"authorization\." "api.")
-                (str/replace #"networking\.k8s\.io"
-                             "networking.api.k8s.io")
-                (str/replace #"events\.k8s\.io" "events.api.k8s.io")
-                (str/replace #"batch\.k8s\.io" "batch")
-                ))]
-    (str/join "." (->> ["k8s" g v k] (remove str/blank?)))))
+  (str/join "." (->> ["k8s" (normalize-group g) v k] (remove str/blank?))))
 
 
 (defn split-camel [s]
@@ -186,7 +195,7 @@
          (str/join "-")
          (symbol))))
 
-(defn load-operations [ztx acc paths]
+(defn load-operations [ztx grp-idx acc paths]
   (->> paths
        (reduce (fn [acc [url {prms :parameters :as ops}]]
                  (let [url (subs (str url) 1)]
@@ -205,7 +214,7 @@
                                                     (merge {:zen/tags #{'k8s/op}
                                                             :method   meth
                                                             :url      (url-template url)
-                                                            :params   (process-params (concat (:parameters op) prms))}))]
+                                                            :params   (process-params grp-idx (concat (:parameters op) prms))}))]
                                         (-> (update acc (symbol ns-name) merge {'ns (symbol ns-name)})
                                             (update-in [(symbol ns-name) (symbol sym)]
                                                        (fn [x]
@@ -215,8 +224,9 @@
                acc)))
 
 (defn load-namespaces [ztx openapi]
-  (let [nss (load-schemas ztx {} (:definitions openapi))]
-    (load-operations ztx nss (:paths openapi))))
+  (let [grp-idx (build-groups-idx openapi)
+        nss (load-schemas ztx grp-idx {} (:definitions openapi))]
+    (load-operations ztx grp-idx nss (:paths openapi))))
 
 
 (defn *update-layer [nss k v]

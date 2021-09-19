@@ -2,6 +2,7 @@
   (:require [org.httpkit.client :as http]
             [zen.ops.jwt.core :as jwt]
             [zen.core :as zen]
+            [clojure.walk]
             [clojure.string :as str]
             [cheshire.core :as json]))
 
@@ -10,13 +11,14 @@
 (defn service-account [path]
   (json/parse-string (slurp path) keyword))
 
-(defn get-token [service-account opts]
+(defn get-token [service-account & [opts]]
   (let [now-t (now)
         claims {"iss" (:client_email service-account)
-                "scope" (->> (:scope opts)
+                "scope" (->> (or (:scope opts)
+                                 ["https://www.googleapis.com/auth/cloud-platform" "https://www.googleapis.com/auth/cloud-platform.read-only"])
                              (str/join " "))
                 "aud" (:token_uri service-account)
-                "exp" (+ now-t (or (:expiration opts) 30))
+                "exp" (+ now-t (or (:exp opts) 30))
                 "iat" now-t}
         jwt (jwt/sign (jwt/get-only-private-key (jwt/read-key (:private_key service-account))) claims :RS256)
         token-resp @(http/post (:token_uri service-account)
@@ -28,6 +30,9 @@
           (json/parse-string keyword)
           :access_token)
       (throw (Exception. (pr-str token-resp))))))
+
+(defn token [path]
+  (get-token (service-account "gcp-creds.json")))
 
 (defn json-get [url & [opts]]
   (-> @(http/get url opts)
@@ -53,14 +58,19 @@
                (or (zen/get-symbol ztx (symbol (namespace s) "def"))
                    (zen/get-symbol ztx (symbol (namespace s) "discovery")))))))
 
+
+(defn parse-url-name [x]
+  (keyword (str/replace x #"(\{|\+|\})" "")))
+
 (defn url-template [url]
   (->> (str/split url #"/")
        (filterv #(not (str/blank? %)))
        (mapv (fn [x]
-               (if (and (str/starts-with? x "{")
-                        (str/ends-with? x "}"))
-                 (keyword (str/replace (subs x 1 (dec (count x)))
-                                       #"^\+" ""))
+               (if (and (str/starts-with? x "{"))
+                 (if (str/includes? x ":")
+                   (let [[p op] (str/split x #":" 2)]
+                     [(parse-url-name p) op])
+                   (parse-url-name x))
                  x)))))
 
 (defmulti sch2zen (fn [x] (keyword (:type x))))
@@ -101,6 +111,10 @@
 (defmethod sch2zen :integer
   [sch]
   (assoc sch :type 'zen/integer))
+
+(defmethod sch2zen :boolean
+  [sch]
+  (assoc sch :type 'zen/boolean))
 
 (defmethod sch2zen :number
   [sch]
@@ -199,19 +213,17 @@
       res
       (load-api-definition ztx nm res))))
 
+(defn get-url-param [params x]
+  (if-let [v (get params x)] v (throw (Exception. (pr-str :missed-param x params)))))
+
 (defn render-url [url-template params]
-  (let [resource (:resource params)
-        url (->> url-template
-                 (mapv (fn [x]
-                         (if (string? x)
-                           x
-                           (if-let [v (get params x)]
-                             v
-                             (throw (Exception. (pr-str :missed-param x params)))))))
-                 (str/join "/"))]
-    (if resource
-      (str/replace url #"\{\+?resource\}" resource)
-        url)))
+  (->> url-template
+       (mapv (fn [x]
+               (cond
+                 (string? x) x
+                 (keyword? x)  (get-url-param params x)
+                 (vector? x) (str (get-url-param params (first x)) ":" (second x)))))
+       (str/join "/")))
 
 (defn build-request [ztx op]
   (if-let [op-def (zen/get-symbol ztx (symbol (:method op)))]
@@ -240,7 +252,70 @@
     (if err
       req
       (let [resp (-> @(http/request req)
-                     (update :body (fn [x] (when x (json/parse-string x keyword)))))]
-        (if (< (:status resp) 300)
-          {:result (:body resp)}
-          {:error (:body resp)})))))
+                     (update :body (fn [x] (when x (try (json/parse-string x keyword)
+                                                       (catch Exception e
+                                                         x))))))]
+        (if (nil? (:status resp))
+          {:error resp}
+          (if (< (:status resp) 300)
+            {:result (:body resp)}
+            {:error (let [b (:body resp)]
+                      (or (:error b) b))}))))))
+
+
+(defn build-filter [q]
+  (when q (re-pattern (str ".*" (str/join ".*" (mapv str/lower-case (str/split q #"\s+"))) ".*"))))
+
+(defn ilike-filter [q xs]
+  (let [q (build-filter q)]
+    (->> (cond->> xs
+           q (filterv (fn [x]
+                        (not (nil? (re-matches q (str/lower-case (str x))))))))
+         (sort))))
+
+(defn list-ops [ztx & [q]]
+  (->> (zen/get-tag ztx 'gcp/op)
+       (ilike-filter q)))
+
+(defn list-schemas [ztx & [q]]
+  (->> (zen/get-tag ztx 'gcp/schema)
+       (ilike-filter q)))
+
+(declare effective-schema)
+
+(defn effective-schema* [ztx sch]
+  (clojure.walk/postwalk
+   (fn [x]
+     (if-let [cfrm  (and (map? x) (first (:confirms x)))]
+       (merge x (effective-schema ztx cfrm))
+       x))
+   sch))
+
+(defn effective-schema [ztx sym]
+  (effective-schema* ztx (zen/get-symbol ztx sym)))
+
+(defn gen-sample [sch]
+  (cond
+    (= 'zen/map (:type sch))
+    (->> (:keys sch)
+         (reduce (fn [acc [k v]]
+                   (assoc acc k (gen-sample v))
+                   ) {}))
+
+    (= 'zen/vector (:type sch))
+    [(gen-sample (:every sch))]
+
+    :else
+    (or (:type sch) sch)))
+
+(defn describe [ztx sym]
+  (gen-sample (effective-schema ztx sym)))
+
+(defn op-def [ztx op-name]
+  (let [op (zen/get-symbol ztx op-name)]
+    op))
+
+(defn op-desc [ztx op-name]
+  (let [op (zen/get-symbol ztx op-name)]
+    {:method op-name
+     :params (gen-sample (effective-schema* ztx (:params op)))}))

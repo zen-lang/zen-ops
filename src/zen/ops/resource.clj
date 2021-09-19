@@ -1,5 +1,8 @@
 (ns zen.ops.resource
-  (:require [clojure.walk :as walk]))
+  (:require
+   [zen.core :as zen]
+   [clojure.walk :as walk])
+  (:refer-clojure :exclude [format]))
 
 (declare do-expand)
 
@@ -17,9 +20,15 @@
 (defn do-expand [ztx resource]
   (->> (expand ztx resource)
        (reduce (fn [acc res]
-                 (if (:zo/type res)
-                   (into acc (do-expand ztx (do-format ztx res)))
-                   (conj acc (do-format ztx res))))
+                 (let [fres (do-format ztx res)]
+                   (when-let [tp (or (:zo/type fres) (:k8s/type fres))]
+                     (->>
+                      (zen/validate ztx #{tp} (dissoc fres :zo/type :k8s/type))
+                      :errors
+                      (mapv (fn [err] (println :expansion-error tp err)))))
+                   (if (:zo/type fres)
+                     (into acc (do-expand ztx fres))
+                     (conj acc fres))))
                [])))
 
 
