@@ -6,6 +6,7 @@
                               :sha "edc2a7ce7814ead18286b3c8e196ccc21a124641"}
         fipp/fipp            {:mvn/version "0.6.24"}
         http-kit/http-kit               {:mvn/version "2.5.3"}
+        inflections/inflections {:mvn/version "0.13.2"}
 
         org.eclipse.jetty.websocket/websocket-client {:mvn/version "9.4.43.v20210629"}
 

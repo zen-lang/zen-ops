@@ -18,18 +18,23 @@
 (defmulti expand (fn [ztx resource] (:zo/type resource)))
 
 (defn do-expand [ztx resource]
-  (->> (expand ztx resource)
-       (reduce (fn [acc res]
-                 (let [fres (do-format ztx res)]
-                   (when-let [tp (or (:zo/type fres) (:k8s/type fres))]
-                     (->>
-                      (zen/validate ztx #{tp} (dissoc fres :zo/type :k8s/type))
-                      :errors
-                      (mapv (fn [err] (println :expansion-error tp err)))))
-                   (if (:zo/type fres)
-                     (into acc (do-expand ztx fres))
-                     (conj acc fres))))
-               [])))
+  (if (sequential? resource)
+    (mapv #(do-expand ztx %) resource)
+    (if (:zo/type resource)
+      (->> (expand ztx resource)
+           (reduce (fn [acc res]
+                     (let [fres (do-format ztx res)]
+                       (when-let [tp (or (:zo/type fres) (:k8s/type fres))]
+                         (->>
+                          (zen/validate ztx #{tp} (dissoc fres :zo/type :k8s/type))
+                          :errors
+                          (mapv (fn [err] (println :expansion-error tp err)))))
+                       (if (:zo/type fres)
+                         (into acc (do-expand ztx fres))
+                         (conj acc fres))))
+                   []))
+        ;; TODO add validation
+      (do-format ztx resource))))
 
 
 

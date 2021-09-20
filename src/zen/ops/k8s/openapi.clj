@@ -4,6 +4,7 @@
    [clojure.string :as str]
    [cheshire.core :as cheshire]
    [clojure.java.io :as io]
+   [inflections.core :as infl]
    [clojure.walk]))
 
 
@@ -29,8 +30,7 @@
 (defn normalize-group [_g]
   (when _g
     (->
-     (str/replace _g #"^io\.k8s\.apimachinery\.pkg" "k8s.v1")
-     (str/replace   #"\.k8s\.io" ""))))
+     (str/replace _g #"^io\.k8s\.apimachinery\.pkg" "k8s.v1"))))
 
 (defn translate-ns [grps-map k]
   (let [parts (str/split (if (keyword? k) (subs (str k) 1) k) #"\.")
@@ -38,8 +38,8 @@
         _g (str/join "." (into [] (drop-last 2 parts)))]
     (if-let [g (get grps-map _g)]
       [(symbol (->
-         (str "k8s." (if (str/blank? g) "" (str g ".")) _v )
-         (normalize-group)))
+                (str "k8s." (if (str/blank? g) "" (str g ".")) _v )
+                (normalize-group)))
        (symbol _k)]
       [(symbol (normalize-group _g))
        (symbol _k)])))
@@ -49,13 +49,13 @@
     (apply symbol (mapv str (translate-ns grp-idx sym)))))
 
 (defn *sch2zen [grp-idx {desc :description ref :$ref
-                 k8s-lmk :x-kubernetes-list-map-keys
-                 k8s-lt :x-kubernetes-list-type
-                 k8s-pmk :x-kubernetes-patch-merge-key
-                 k8s-ps :x-kubernetes-patch-strategy
-                 k8s-u :x-kubernetes-unions
-                 k8s-gvk :x-kubernetes-group-version-kind
-                 :as sch}]
+                         k8s-lmk :x-kubernetes-list-map-keys
+                         k8s-lt :x-kubernetes-list-type
+                         k8s-pmk :x-kubernetes-patch-merge-key
+                         k8s-ps :x-kubernetes-patch-strategy
+                         k8s-u :x-kubernetes-unions
+                         k8s-gvk :x-kubernetes-group-version-kind
+                         :as sch}]
   (-> (dissoc sch :description :$ref
               :x-kubernetes-list-map-keys
               :x-kubernetes-list-type
@@ -105,12 +105,12 @@
   (let [reqs (into  #{} (mapv keyword req))]
     (cond->
         (merge
-          (dissoc sch :properties :additionalProperties :required)
-          {:type 'zen/map})
+         (dissoc sch :properties :additionalProperties :required)
+         {:type 'zen/map})
       props
       (assoc :keys (reduce (fn [acc [k v]]
-                        (assoc acc k (*sch2zen grp-idx v)))
-                      {} props))
+                             (assoc acc k (*sch2zen grp-idx v)))
+                           {} props))
 
 
       aprops
@@ -138,11 +138,11 @@
 (defn collect-imports [self n]
   (let [imp (atom #{})]
     (clojure.walk/postwalk
-      (fn [x]
-        (when-let [n (and (symbol? x) (namespace x))]
-          (when-not (contains? #{"zen" (str self)} n)
-            (swap! imp conj (symbol n))))
-        x) n)
+     (fn [x]
+       (when-let [n (and (symbol? x) (namespace x))]
+         (when-not (contains? #{"zen" (str self)} n)
+           (swap! imp conj (symbol n))))
+       x) n)
     @imp))
 
 
@@ -168,13 +168,24 @@
                         (str/ends-with? x "}"))
                  (keyword (subs x 1 (dec (count x))))
                  x)))))
+
 (defn process-params [grp-idx params]
   (->> params
        (reduce (fn [acc {nm :name :as prm}]
                  (let [k (keyword nm)]
-                   (-> acc (assoc k (cond-> (dissoc prm :name)
-                                      (:schema prm) (assoc :schema (*sch2zen grp-idx prm)))))))
-               {})))
+                   (-> acc
+                       (assoc-in [:keys  k]
+                                 (-> (*sch2zen grp-idx (cond-> (:schema prm)
+                                                         (:type prm) (assoc :type (:type prm))))
+                                     (assoc :zen/desc (:description prm)
+                                            :openapi/in (:in prm))
+                                     (cond->
+                                         (:uniqueItems prm) (assoc :k8s/uniqueItems true))))
+                       (cond->
+                           (:required prm) (update :require conj k)))))
+               {:type 'zen/map
+                :require #{}
+                :keys {}})))
 
 (defn build-ns-name [g v k]
   (str/join "." (->> ["k8s" (normalize-group g) v k] (remove str/blank?))))
@@ -210,11 +221,19 @@
                                                 (normalize-op-id oid (into (str/split (or g "") #"\.") [v k]))))]
                                     (if-not sym
                                       acc
-                                      (let [zop (-> (dissoc op :parameters)
+                                      (let [zop (-> (dissoc op :parameters :description
+                                                            :x-kubernetes-action
+                                                            :x-kubernetes-group-version-kind :operationId :response)
                                                     (merge {:zen/tags #{'k8s/op}
-                                                            :method   meth
-                                                            :url      (url-template url)
-                                                            :params   (process-params grp-idx (concat (:parameters op) prms))}))]
+                                                            :zen/desc (:description op)
+                                                            :k8s/api (:x-kubernetes-group-version-kind op) 
+                                                            :k8s/oid (:operationId op)
+                                                            :k8s/action (:x-kubernetes-action op)
+                                                            :openapi/method  meth
+                                                            :openapi/url      (url-template url)
+                                                            :params   (process-params grp-idx (concat (:parameters op) prms))
+                                                            :result (when-let [s (get-in op [:responses (keyword "200") :schema])]
+                                                                      s #_(*sch2zen grp-idx s))}))]
                                         (-> (update acc (symbol ns-name) merge {'ns (symbol ns-name)})
                                             (update-in [(symbol ns-name) (symbol sym)]
                                                        (fn [x]
@@ -288,21 +307,15 @@
     op-def))
 
 (defn build-request-params [ztx params-def params]
-  (->> params-def
+  (->> (:keys params-def)
        (reduce (fn [acc [k pdef]]
                  (let [v (get params k)]
-                   (if (and (:require pdef) (nil? v))
-                     (update acc :errors (fn [x] (conj (or x []) (str "Missed parameter " k))))
-                     (if v
-                       (if-let [errs (and (:schema pdef)
-                                          (let [{errs :errors} (zen.core/validate-schema ztx (:schema pdef) v)]
-                                            (seq errs)))]
-                         (update acc :errors (fn [x] (into (or x []) errs)))
-                         (case (:in pdef)
-                           "body"  (assoc acc :body (cheshire/generate-string v))
-                           "query" (assoc-in acc [:query-params k] v)
-                           "path"  acc))
-                       acc))))
+                   (if v
+                     (case (:openapi/in pdef)
+                       "body"  (assoc acc :body (cheshire/generate-string v))
+                       "query" (assoc-in acc [:query-params k] v)
+                       "path"  acc)
+                     acc)))
                {})))
 
 (defn render-url [url-template params]
@@ -315,12 +328,17 @@
                    (throw (Exception. (pr-str :missed-param x params)))))))
        (str/join "/")))
 
-(defn build-request [ztx {m :method params :params}]
-  (let [opd (op-def ztx m)
-        {errs :errors :as req} (build-request-params ztx (:params opd) params)]
-    (when-not (empty? errs) (throw (Exception. (str/join "; " errs))))
-    (let [url (render-url (:url opd) params)]
-      (assoc req :url url :method (:method opd)))))
+(defn *build-request [ztx opd {m :method params :params}]
+  (let [{errs :errors } (zen/validate-schema ztx (:params opd) params)]
+    (if-not (empty? errs)
+      {:error {:errors errs :params params}
+       :schema (:params opd)}
+      (let [req (build-request-params ztx (:params opd) params)
+            url (render-url (:openapi/url opd) params)]
+        (assoc req :url url :method (:openapi/method opd))))))
+
+(defn build-request [ztx {m :method :as req}]
+  (*build-request ztx (op-def ztx m) req))
 
 
 (defn validate [ztx res]
@@ -360,6 +378,264 @@
 
     :else
     (or (:type sch) sch)))
+
+(defn plural [s]
+  (when s (infl/plural (str/lower-case s))))
+
+(def list-params 
+  {:type 'zen/map
+   :require #{}
+   :keys
+   {:allowWatchBookmarks
+    {:type 'zen/boolean
+     :zen/desc
+     "allowWatchBookmarks requests watch events with type \"BOOKMARK\". Servers that do not implement bookmarks may ignore this flag and bookmarks are sent at the server's discretion. Clients should not assume bookmarks are returned at any specific interval, nor may they assume the server will send any BOOKMARK event during a session. If this is not a watch, this field is ignored. If the feature gate WatchBookmarks is not enabled in apiserver, this field is ignored."
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :limit
+    {:type 'zen/integer
+     :zen/desc
+     "limit is a maximum number of responses to return for a list call. If more items exist, the server will set the `continue` field on the list metadata to a value that can be used with the same initial query to retrieve the next set of results. Setting a limit may return fewer than the requested amount of items (up to zero items) in the event all requested objects are filtered out and clients should only use the presence of the continue field to determine whether more results are available. Servers may choose not to support the limit argument and will return all of the available results. If limit is specified and the continue field is empty, clients may assume that no more results are available. This field is not supported if watch is true.\n\nThe server guarantees that the objects returned when using continue will be identical to issuing a single list call without a limit - that is, no objects created, modified, or deleted after the first request is issued will be included in any subsequent continued requests. This is sometimes referred to as a consistent snapshot, and ensures that a client that is using limit to receive smaller chunks of a very large result can ensure they see all possible objects. If objects are updated during a chunked list the version of the object that was present at the time the first list result was calculated is returned."
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :continue
+    {:type 'zen/string
+     :zen/desc
+     "The continue option should be set when retrieving more results from the server. Since this value is server defined, clients may only use the continue value from a previous query result with identical query parameters (except for the value of continue) and the server may reject a continue value it does not recognize. If the specified continue value is no longer valid whether due to expiration (generally five to fifteen minutes) or a configuration change on the server, the server will respond with a 410 ResourceExpired error together with a continue token. If the client needs a consistent list, it must restart their list without the continue field. Otherwise, the client may send another list request with the token received with the 410 error, the server will respond with a list starting from the next key, but from the latest snapshot, which is inconsistent from the previous list results - objects that are created, modified, or deleted after the first list request will be included in the response, as long as their keys are after the \"next key\".\n\nThis field is not supported when watch is true. Clients may start a watch from the last resourceVersion value returned by the server and not miss any modifications."
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :resourceVersion
+    {:type 'zen/string
+     :zen/desc
+     "resourceVersion sets a constraint on what resource versions a request may be served from. See https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions for details.\n\nDefaults to unset"
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :labelSelector
+    {:type 'zen/string
+     :zen/desc
+     "A selector to restrict the list of returned objects by their labels. Defaults to everything."
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :timeoutSeconds
+    {:type 'zen/integer
+     :zen/desc
+     "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity."
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :resourceVersionMatch
+    {:type 'zen/string
+     :zen/desc
+     "resourceVersionMatch determines how resourceVersion is applied to list calls. It is highly recommended that resourceVersionMatch be set for list calls where resourceVersion is set See https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions for details.\n\nDefaults to unset"
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :watch
+    {:type 'zen/boolean
+     :zen/desc
+     "Watch for changes to the described resources and return them as a stream of add, update, and remove notifications. Specify resourceVersion."
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :pretty
+    {:type 'zen/string
+     :zen/desc "If 'true', then the output is pretty printed."
+     :openapi/in "query"
+     :k8s/uniqueItems true}
+    :fieldSelector
+    {:type 'zen/string
+     :zen/desc
+     "A selector to restrict the list of returned objects by their fields. Defaults to everything."
+     :openapi/in "query"
+     :k8s/uniqueItems true}}})
+
+(defn gen-gvk [res]
+  (if-let [tp (:k8s/type res)]
+    (let [parts (str/split (namespace tp) #"\.")
+          g (->> parts (drop 1) (drop-last 1) (str/join "."))
+          k (name tp)
+          v (last parts)]
+      [g v k])
+    (throw (Exception. (str "No :k8s/type")))))
+
+(defn gen-list-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :get
+     :openapi/url (if (str/blank? g)
+                    ["api" v "namespaces" :namespace (plural k)]
+                    ["apis" g v "namespaces" :namespace (plural k)])
+     :params
+     (-> 
+      (assoc-in list-params 
+                [:keys :namespace]
+                {:type 'zen/string,
+                 :zen/desc "object name and auth scope, such as for teams and projects",
+                 :openapi/in "path",
+                 :k8s/uniqueItems true})
+      (update :require conj :namespace))}))
+
+
+(defn gen-list-all-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :get
+     :openapi/url (if (str/blank? g)
+                    ["api" v  (plural k)]
+                    ["apis" g v  (plural k)])
+     :params list-params}))
+
+(def read-params
+  {:type 'zen/map,
+   :require #{:name},
+   :keys
+   {:exact
+    {:type 'zen/boolean,
+     :zen/desc
+     "Should the export be exact.  Exact export maintains cluster-specific fields like 'Namespace'. Deprecated. Planned for removal in 1.18.",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :export
+    {:type 'zen/boolean,
+     :zen/desc
+     "Should this value be exported.  Export strips fields that a user can not specify. Deprecated. Planned for removal in 1.18.",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :name
+    {:type 'zen/string,
+     :zen/desc "name of the Deployment",
+     :openapi/in "path",
+     :k8s/uniqueItems true},
+    :pretty
+    {:type 'zen/string,
+     :zen/desc "If 'true', then the output is pretty printed.",
+     :openapi/in "query",
+     :k8s/uniqueItems true}}})
+
+
+(defn gen-read-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :get
+     :openapi/url (if (str/blank? g)
+                    ["api" v  "namespaces" :namespace  (plural k) :name]
+                    ["apis" g v  "namespaces" :namespace  (plural k) :name])
+     :params (-> (assoc-in read-params
+                        [:keys :namespace]
+                        {:type 'zen/string,
+                         :zen/desc "object name and auth scope, such as for teams and projects",
+                         :openapi/in "path",
+                         :k8s/uniqueItems true})
+                 (update :require conj :namespace))}))
+
+(defn gen-read-all-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :get
+     :openapi/url (if (str/blank? g)
+                    ["api" v  (plural k) :name]
+                    ["apis" g v  (plural k) :name])
+     :params read-params}))
+
+
+(def create-params
+  {:type 'zen/map,
+   :require #{:body},
+   :keys
+   {:body {:openapi/in "body"},
+    :dryRun
+    {:type 'zen/string,
+     :zen/desc "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :fieldManager
+    {:type 'zen/string,
+     :zen/desc "fieldManager is a name associated with the actor or entity that is making these changes. The value must be less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint.",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :pretty
+    {:type 'zen/string,
+     :zen/desc "If 'true', then the output is pretty printed.",
+     :openapi/in "query",
+     :k8s/uniqueItems true}}})
+
+(defn gen-create-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :post
+     :openapi/url (if (str/blank? g)
+                    ["api" v  "namespaces" :namespace  (plural k)]
+                    ["apis" g v  "namespaces" :namespace  (plural k)])
+     :params (-> (assoc-in create-params [:keys :body :confirms] #{(:k8s/type res)})
+                 (update :require conj :namespace)
+                 (assoc-in [:keys :namespace]
+                           {:type 'zen/string,
+                            :zen/desc "object name and auth scope, such as for teams and projects",
+                            :openapi/in "path",
+                            :k8s/uniqueItems true}))}))
+
+(defn gen-create-all-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :post
+     :openapi/url (if (str/blank? g)
+                    ["api" v   (plural k)]
+                    ["apis" g v   (plural k)])
+     :params (assoc-in create-params [:keys :body :confirms] #{(:k8s/type res)})}))
+
+(def replace-params {:type 'zen/map,
+                     :require #{:name :body},
+                     :keys
+                     {:body {:openapi/in "body"},
+                      :dryRun {:type 'zen/string,
+                               :zen/desc "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
+                               :openapi/in "query",
+                               :k8s/uniqueItems true},
+                      :fieldManager
+                      {:type 'zen/string,
+                       :zen/desc "fieldManager is a name associated with the actor or entity that is making these changes. The value must be less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint.",
+                       :openapi/in "query",
+                       :k8s/uniqueItems true},
+                      :name
+                      {:type 'zen/string,
+                       :zen/desc "name of the Deployment",
+                       :openapi/in "path",
+                       :k8s/uniqueItems true},
+                      :pretty
+                      {:type 'zen/string,
+                       :zen/desc "If 'true', then the output is pretty printed.",
+                       :openapi/in "query",
+                       :k8s/uniqueItems true}}})
+
+
+(defn gen-replace-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :put
+     :openapi/url (if (str/blank? g)
+                    ["api" v  "namespaces" :namespace  (plural k) :name]
+                    ["apis" g v  "namespaces" :namespace  (plural k) :name])
+     :params (-> (assoc-in replace-params [:keys :body :confirms] #{(:k8s/type res)})
+                 (update :require conj :namespace)
+                 (assoc-in [:keys :namespace]
+                           {:type 'zen/string,
+                            :zen/desc "object name and auth scope, such as for teams and projects",
+                            :openapi/in "path",
+                            :k8s/uniqueItems true}))}))
+
+
+(defn gen-replace-all-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :put
+     :openapi/url (if (str/blank? g)
+                    ["api" v  (plural k) :name]
+                    ["apis" g v  (plural k) :name])
+     :params (assoc-in replace-params [:keys :body :confirms] #{(:k8s/type res)})}))
+
+
+(defn gen-replace-status-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :put
+     :openapi/url (if (str/blank? g)
+                    ["api" v  "namespaces" :namespace  (plural k) :name "status"]
+                    ["apis" g v  "namespaces" :namespace  (plural k) :name "status"])
+     :params (-> (assoc-in replace-params [:keys :body :confirms] #{(:k8s/type res)})
+                 (update :require conj :namespace)
+                 (assoc-in [:keys :namespace]
+                           {:type 'zen/string,
+                            :zen/desc "object name and auth scope, such as for teams and projects",
+                            :openapi/in "path",
+                            :k8s/uniqueItems true}))}))
 
 (defn describe [ztx sym]
   (gen-sample (effective-schema ztx sym)))
