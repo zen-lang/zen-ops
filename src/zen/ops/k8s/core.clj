@@ -74,39 +74,48 @@
   (*do-request ztx conn (openapi/gen-read-all-def ztx res)
                {:params (merge params (:metadata res))}))
 
+(defn enrich-with-kind [api res]
+  (merge {:kind (:kind api) :apiVersion (str (:group api) "/" (:version api))}
+         (dissoc res :k8s/type)))
+
 (defn do-create [ztx conn res & [params]]
-  (*do-request ztx conn (openapi/gen-create-def ztx res)
-               {:params (merge params
-                               {:namespace (get-in res [:metadata :namespace])
-                                :body (dissoc res :k8s/type)})}))
+  (let [{api :k8s/api :as opd} (openapi/gen-create-def ztx res)]
+    (*do-request ztx conn opd
+                 {:params (merge params
+                                 {:namespace (get-in res [:metadata :namespace])
+                                  :body (enrich-with-kind api res)})})))
 
 (defn do-create-all [ztx conn res & [params]]
-  (*do-request ztx conn (openapi/gen-create-all-def ztx res)
-               {:params (merge params
-                               {:body (dissoc res :k8s/type)})}))
+  (let [{api :k8s/api :as opd} (openapi/gen-create-all-def ztx res)]
+    (*do-request ztx conn opd
+                 {:params (merge params
+                                 {:body (enrich-with-kind api res)})})))
 
 (defn do-replace [ztx conn res & [params]]
-  (*do-request ztx conn (openapi/gen-replace-def ztx res)
-               {:params (merge params
-                               {:namespace (get-in res [:metadata :namespace])
-                                :name (get-in res [:metadata :name])
-                                :body (dissoc res :k8s/type)})}))
+  (let [{api :k8s/api :as opd} (openapi/gen-replace-def ztx res)]
+    (*do-request ztx conn opd
+                 {:params (merge params
+                                 {:namespace (get-in res [:metadata :namespace])
+                                  :name (get-in res [:metadata :name])
+                                  :body (enrich-with-kind api res)})})))
 
 (defn do-replace-all [ztx conn res & [params]]
-  (*do-request ztx conn (openapi/gen-replace-all-def ztx res)
-               {:params (merge params
-                               {:name (get-in res [:metadata :name])
-                                :body (dissoc res :k8s/type)})}))
+  (let [{api :k8s/api :as opd} (openapi/gen-replace-all-def ztx res)]
+    (*do-request ztx conn opd
+                 {:params (merge params
+                                 {:name (get-in res [:metadata :name])
+                                  :body (enrich-with-kind api res)})})))
 
 (defn do-replace-status [ztx conn res & [params]]
-  (let [{old :result err :error :as resp} (do-read ztx conn res)]
+  (let [{api :k8s/api :as opd} (openapi/gen-replace-status-def ztx res)
+        {old :result err :error :as resp} (do-read ztx conn res)]
     (if err
       resp
-      (*do-request ztx conn (openapi/gen-replace-status-def ztx res)
+      (*do-request ztx conn opd
                    {:params (merge params
                                    {:namespace (get-in res [:metadata :namespace])
                                     :name (get-in res [:metadata :name])
-                                    :body (-> (dissoc res :k8s/type)
+                                    :body (-> (enrich-with-kind api res)
                                               (assoc-in [:metadata :resourceVersion]
                                                         (get-in old [:metadata :resourceVersion])))})}))))
 

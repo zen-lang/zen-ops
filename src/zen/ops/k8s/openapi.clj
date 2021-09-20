@@ -555,6 +555,7 @@
 (defn gen-create-def [ztx res]
   (let [[g v k] (gen-gvk res)]
     {:openapi/method :post
+     :k8s/api {:group g :kind k :version v},
      :openapi/url (if (str/blank? g)
                     ["api" v  "namespaces" :namespace  (plural k)]
                     ["apis" g v  "namespaces" :namespace  (plural k)])
@@ -569,6 +570,7 @@
 (defn gen-create-all-def [ztx res]
   (let [[g v k] (gen-gvk res)]
     {:openapi/method :post
+     :k8s/api {:group g :kind k :version v},
      :openapi/url (if (str/blank? g)
                     ["api" v   (plural k)]
                     ["apis" g v   (plural k)])
@@ -602,21 +604,23 @@
 (defn gen-replace-def [ztx res]
   (let [[g v k] (gen-gvk res)]
     {:openapi/method :put
+     :k8s/api {:group g :kind k :version v}
      :openapi/url (if (str/blank? g)
                     ["api" v  "namespaces" :namespace  (plural k) :name]
                     ["apis" g v  "namespaces" :namespace  (plural k) :name])
      :params (-> (assoc-in replace-params [:keys :body :confirms] #{(:k8s/type res)})
                  (update :require conj :namespace)
                  (assoc-in [:keys :namespace]
-                           {:type 'zen/string,
-                            :zen/desc "object name and auth scope, such as for teams and projects",
-                            :openapi/in "path",
+                           {:type 'zen/string
+                            :zen/desc "object name and auth scope, such as for teams and projects"
+                            :openapi/in "path"
                             :k8s/uniqueItems true}))}))
 
 
 (defn gen-replace-all-def [ztx res]
   (let [[g v k] (gen-gvk res)]
     {:openapi/method :put
+     :k8s/api {:group g :kind k :version v}
      :openapi/url (if (str/blank? g)
                     ["api" v  (plural k) :name]
                     ["apis" g v  (plural k) :name])
@@ -626,15 +630,16 @@
 (defn gen-replace-status-def [ztx res]
   (let [[g v k] (gen-gvk res)]
     {:openapi/method :put
+     :k8s/api {:group g :kind k :version v}
      :openapi/url (if (str/blank? g)
                     ["api" v  "namespaces" :namespace  (plural k) :name "status"]
                     ["apis" g v  "namespaces" :namespace  (plural k) :name "status"])
      :params (-> (assoc-in replace-params [:keys :body :confirms] #{(:k8s/type res)})
                  (update :require conj :namespace)
                  (assoc-in [:keys :namespace]
-                           {:type 'zen/string,
-                            :zen/desc "object name and auth scope, such as for teams and projects",
-                            :openapi/in "path",
+                           {:type 'zen/string
+                            :zen/desc "object name and auth scope, such as for teams and projects"
+                            :openapi/in "path"
                             :k8s/uniqueItems true}))}))
 
 (defn describe [ztx sym]
