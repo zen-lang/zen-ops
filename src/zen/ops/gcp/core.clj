@@ -63,15 +63,16 @@
   (keyword (str/replace x #"(\{|\+|\})" "")))
 
 (defn url-template [url]
-  (->> (str/split url #"/")
-       (filterv #(not (str/blank? %)))
-       (mapv (fn [x]
-               (if (and (str/starts-with? x "{"))
-                 (if (str/includes? x ":")
-                   (let [[p op] (str/split x #":" 2)]
-                     [(parse-url-name p) op])
-                   (parse-url-name x))
-                 x)))))
+  (when url
+    (->> (str/split url #"/")
+         (filterv #(not (str/blank? %)))
+         (mapv (fn [x]
+                 (if (and (str/starts-with? x "{"))
+                   (if (str/includes? x ":")
+                     (let [[p op] (str/split x #":" 2)]
+                       [(parse-url-name p) op])
+                     (parse-url-name x))
+                   x))))))
 
 (defmulti sch2zen (fn [x] (keyword (:type x))))
 
@@ -147,13 +148,11 @@
           :every (*sch2zen its)}))
 
 (defn to-zen-op [{base-url :base-url pth :path} {prms :parameters req :request :as op-def}]
-  (when (not (= (:flatPath op-def)
-                (:path op-def)))
-    #_(println (:id op-def) pth
-             "\n>"
-             (:flatPath op-def)
-             "\n>"
-             (:path op-def)))
+  ;; (when (not (= (:flatPath op-def)
+  ;;               (:path op-def)))
+  ;;   (println (:id op-def) pth "\n>" (:flatPath op-def) "\n>" (:path op-def)))
+
+  ;; (println (:id op-def) pth "\n>" (:flatPath op-def) "\n>" (:path op-def))
   (let [base-url (str/replace base-url #"/$" "")
         params {:type 'zen/map
                 :keys {}}
