@@ -18,7 +18,7 @@
                                  ["https://www.googleapis.com/auth/cloud-platform" "https://www.googleapis.com/auth/cloud-platform.read-only"])
                              (str/join " "))
                 "aud" (:token_uri service-account)
-                "exp" (+ now-t (or (:exp opts) 30))
+                "exp" (+ now-t (or (:exp opts) 300))
                 "iat" now-t}
         jwt (jwt/sign (jwt/get-only-private-key (jwt/read-key (:private_key service-account))) claims :RS256)
         token-resp @(http/post (:token_uri service-account)
