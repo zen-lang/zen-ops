@@ -263,6 +263,14 @@
    (zen/get-symbol ztx 'k8s.apps.v1.Deployment/replace-status)
    (sut/gen-replace-status-def ztx {:k8s/type 'k8s.apps.v1/Deployment}))
 
+  (zen/get-symbol ztx 'k8s.v1/Patch)
+
+  (matcho/match
+   (zen/get-symbol ztx 'k8s.apps.v1.Deployment/patch-status)
+
+   (sut/gen-patch-status-def ztx {:k8s/type 'k8s.apps.v1/Deployment})
+   )
+
   ;; k8s.networking.api.k8s.io.v1/Ingress
   (doseq [rn (take 100 (sut/list-resources ztx))]
     (let [r (zen/get-symbol ztx rn)]

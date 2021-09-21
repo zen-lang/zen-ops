@@ -334,7 +334,9 @@
        :schema (:params opd)}
       (let [req (build-request-params ztx (:params opd) params)
             url (render-url (:openapi/url opd) params)]
-        (assoc req :url url :method (:openapi/method opd))))))
+        (cond-> (assoc req :url url :method (:openapi/method opd))
+          (:openapi/content-type opd)
+          (assoc-in [:headers "content-type"] (:openapi/content-type opd)))))))
 
 (defn build-request [ztx {m :method :as req}]
   (*build-request ztx (op-def ztx m) req))
@@ -634,6 +636,22 @@
                     ["api" v  "namespaces" :namespace  (plural k) :name "status"]
                     ["apis" g v  "namespaces" :namespace  (plural k) :name "status"])
      :params (-> (assoc-in replace-params [:keys :body :confirms] #{(:k8s/type res)})
+                 (update :require conj :namespace)
+                 (assoc-in [:keys :namespace]
+                           {:type 'zen/string
+                            :zen/desc "object name and auth scope, such as for teams and projects"
+                            :openapi/in "path"
+                            :k8s/uniqueItems true}))}))
+
+(defn gen-patch-status-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :patch
+     :k8s/api {:group g :kind k :version v}
+     :openapi/content-type "application/merge-patch+json"
+     :openapi/url (if (str/blank? g)
+                    ["api" v  "namespaces" :namespace  (plural k) :name "status"]
+                    ["apis" g v  "namespaces" :namespace  (plural k) :name "status"])
+     :params (-> (assoc-in replace-params [:keys :body] {:openapi/in "body" :type 'zen/any})
                  (update :require conj :namespace)
                  (assoc-in [:keys :namespace]
                            {:type 'zen/string

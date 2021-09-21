@@ -27,7 +27,7 @@
 (defn request [ztx conn req]
   (let [{u :url t :token} conn]
     (-> @(http/request (merge req {:url (str u "/" (:url req))
-                                   :headers (cond-> {}
+                                   :headers (cond-> (or (:headers req) {})
                                               t (assoc "Authorization" (str "Bearer " t)))}))
         (update :body (fn [x]
                         (when x (cheshire/parse-string x keyword)))))))
@@ -118,6 +118,14 @@
                                     :body (-> (enrich-with-kind api res)
                                               (assoc-in [:metadata :resourceVersion]
                                                         (get-in old [:metadata :resourceVersion])))})}))))
+
+(defn do-patch-status [ztx conn res & [params]]
+  (let [{api :k8s/api :as opd} (openapi/gen-patch-status-def ztx res)]
+    (*do-request ztx conn opd
+                 {:params (merge params
+                                 {:namespace (get-in res [:metadata :namespace])
+                                  :name (get-in res [:metadata :name])
+                                  :body (-> (enrich-with-kind api res))})})))
 
 (defn items
   ([ks res]
