@@ -7,7 +7,6 @@
    [inflections.core :as infl]
    [clojure.walk]))
 
-
 (defmulti sch2zen (fn [grp-idx x] (keyword (:type x))))
 
 (defn build-groups-idx [api]

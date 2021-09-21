@@ -298,7 +298,9 @@
     (= 'zen/map (:type sch))
     (->> (:keys sch)
          (reduce (fn [acc [k v]]
-                   (assoc acc k (gen-sample v))
+                   (if-not (:readOnly v)
+                     (assoc acc k (gen-sample v))
+                     (assoc acc k :readOnly))
                    ) {}))
 
     (= 'zen/vector (:type sch))
