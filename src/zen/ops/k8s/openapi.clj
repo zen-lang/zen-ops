@@ -531,6 +531,50 @@
                     ["apis" g v  (plural k) :name])
      :params read-params}))
 
+(def delete-params
+  {:type 'zen/map,
+   :require #{:name},
+   :keys
+   {:body {:confirms #{'k8s.v1/DeleteOptions}, :openapi/in "body"},
+    :dryRun
+    {:type 'zen/string,
+     :zen/desc "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :gracePeriodSeconds
+    {:type 'zen/integer,
+     :zen/desc "The duration in seconds before the object should be deleted. Value must be non-negative integer. The value zero indicates delete immediately. If this value is nil, the default grace period for the specified type will be used. Defaults to a per object value if not specified. zero means delete immediately.",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :orphanDependents
+    {:type 'zen/boolean,
+     :zen/desc "Deprecated: please use the PropagationPolicy, this field will be deprecated in 1.7. Should the dependent objects be orphaned. If true/false, the \"orphan\" finalizer will be added to/removed from the object's finalizers list. Either this field or PropagationPolicy may be set, but not both.",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :propagationPolicy
+    {:type 'zen/string,
+     :zen/desc "Whether and how garbage collection will be performed. Either this field or OrphanDependents may be set, but not both. The default policy is decided by the existing finalizer set in the metadata.finalizers and the resource-specific default policy. Acceptable values are: 'Orphan' - orphan the dependents; 'Background' - allow the garbage collector to delete the dependents in the background; 'Foreground' - a cascading policy that deletes all dependents in the foreground.",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :name
+    {:type 'zen/string,
+     :zen/desc "name of the CustomResourceDefinition",
+     :openapi/in "path",
+     :k8s/uniqueItems true},
+    :pretty
+    {:type 'zen/string,
+     :zen/desc "If 'true', then the output is pretty printed.",
+     :openapi/in "query",
+     :k8s/uniqueItems true}}})
+
+(defn gen-delete-all-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :delete
+     :openapi/url (if (str/blank? g)
+                    ["api" v  (plural k) :name]
+                    ["apis" g v  (plural k) :name])
+     :params delete-params}))
+
 
 (def create-params
   {:type 'zen/map,

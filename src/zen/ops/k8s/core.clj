@@ -74,6 +74,7 @@
   (*do-request ztx conn (openapi/gen-read-all-def ztx res)
                {:params (merge params (:metadata res))}))
 
+
 (defn enrich-with-kind [api res]
   (merge {:kind (:kind api) :apiVersion (str (:group api) "/" (:version api))}
          (dissoc res :k8s/type)))
@@ -98,6 +99,10 @@
                                  {:namespace (get-in res [:metadata :namespace])
                                   :name (get-in res [:metadata :name])
                                   :body (enrich-with-kind api res)})})))
+
+(defn do-delete-all [ztx conn res & [params]]
+  (*do-request ztx conn (openapi/gen-delete-all-def ztx res)
+               {:params (merge params {:name (get-in res [:metadata :name])})}))
 
 (defn do-replace-all [ztx conn res & [params]]
   (let [{api :k8s/api :as opd} (openapi/gen-replace-all-def ztx res)]
@@ -152,7 +157,7 @@
         {err :error old-resource :result :as resp} (do-read ktx conn resource)]
     (print-error
      (if (= 404 (:code err))
-       (-> 
+       (->
         (do-create ktx conn resource)
         (assoc :action :create))
        (let [diff (matcho/match*  old-resource resource)]
@@ -169,11 +174,10 @@
 
 (defn do-apply-all [ktx conn resource]
   (let [metadata (select-keys (:metadata resource) [:name])
-        {err :error old-resource :result :as resp}
-        (do-read-all ktx conn resource)]
+        {err :error old-resource :result :as resp} (do-read-all ktx conn resource)]
     (print-error
      (if (= 404 (:code err))
-       (-> 
+       (->
         (do-create-all ktx conn resource)
         (assoc :action :create))
        (let [diff (matcho/match*  old-resource resource)]
@@ -194,8 +198,6 @@
     (if (get-in resource [:metadata :namespace])
       (do-apply-ns ktx conn resource)
       (do-apply-all ktx conn resource))))
-
-
 
 
 (comment

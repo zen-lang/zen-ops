@@ -271,6 +271,12 @@
    (sut/gen-patch-status-def ztx {:k8s/type 'k8s.apps.v1/Deployment})
    )
 
+
+  (matcho/match
+   (zen/get-symbol ztx 'k8s.apiextensions.k8s.io.v1.CustomResourceDefinition/delete)
+   (sut/gen-delete-all-def ztx {:k8s/type 'k8s.apiextensions.k8s.io.v1/CustomResourceDefinition})
+   )
+
   ;; k8s.networking.api.k8s.io.v1/Ingress
   (doseq [rn (take 100 (sut/list-resources ztx))]
     (let [r (zen/get-symbol ztx rn)]
