@@ -39,19 +39,24 @@
 
 (defn ws-listener
   [p opts]
-  (let [out (java.io.ByteArrayOutputStream.)]
+  (let [out (atom {})]
     (reify WebSocketListener
       (onWebSocketConnect [this session]
-        (println "Session" session))
+        (println :ws/connected))
       (onWebSocketText [this message]
         (throw (UnsupportedOperationException. "Text not supported")))
       (onWebSocketBinary [this bytes offset len]
-        (println :binary offset len)
-        (.write out (.array (ByteBuffer/wrap bytes offset len))))
+        ;; (println :binary offset len)
+        (if (= 1 len)
+          :skip ;;(println :? (nth bytes 0))
+          (let [channel (int (nth bytes 0))
+                channel (get {1 :out 2 :err 3 :oci} channel channel)]
+            (swap! out update channel (fn [x] (conj (or x []) (str/trim (subs (String. bytes) 1))))))))
       (onWebSocketError [this cause]
         (deliver p {:error {:message (.getMessage cause) :opts opts}}))
       (onWebSocketClose [this status-code reason]
-        (deliver p {:result (String. (.toByteArray out))})))))
+        ;; (println :close status-code reason)
+        (deliver p {:result @out})))))
 
 (defn url-encode [x]
   (URLEncoder/encode x "UTF-8"))
