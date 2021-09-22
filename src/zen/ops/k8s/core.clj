@@ -68,7 +68,7 @@
 
 (defn do-read [ztx conn res & [params]]
   (*do-request ztx conn (openapi/gen-read-def ztx res)
-               {:params (merge params (:metadata res))}))
+               {:params (merge params (select-keys (:metadata res) [:name :namespace]))}))
 
 (defn do-read-all [ztx conn res & [params]]
   (*do-request ztx conn (openapi/gen-read-all-def ztx res)
