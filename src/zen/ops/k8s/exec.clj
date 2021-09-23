@@ -42,7 +42,8 @@
   (let [out (atom {})]
     (reify WebSocketListener
       (onWebSocketConnect [this session]
-        (println :ws/connected))
+        ;; (println :ws/connected)
+        )
       (onWebSocketText [this message]
         (throw (UnsupportedOperationException. "Text not supported")))
       (onWebSocketBinary [this bytes offset len]

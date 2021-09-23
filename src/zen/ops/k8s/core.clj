@@ -5,6 +5,7 @@
    [zen.ops.k8s.exec]
    [org.httpkit.client :as http]
    [matcho.core :as matcho]
+   [klog.core :as klog]
    [cheshire.core :as cheshire]))
 
 
@@ -13,7 +14,6 @@
 
 (defn init-context [ztx opts]
   (openapi/load-default-api ztx))
-
 
 (def list-ops openapi/list-ops)
 
@@ -149,7 +149,7 @@
 
 (defn print-error [res]
   (when-let [err (:error res)]
-    (println "ERROR:" (:error err)))
+    (klog/log :k8s/error {:error err}))
   res)
 
 (defn do-apply-ns  [ktx conn resource]
@@ -160,17 +160,19 @@
        (->
         (do-create ktx conn resource)
         (assoc :action :create))
-       (let [diff (matcho/match*  old-resource resource)]
+       (let [diff (matcho/match*  old-resource (dissoc resource :k8s/type))]
          (if (not (empty? diff))
-           (->
-            (do-replace
-             ktx conn
-             (cond-> resource
-               (get-in old-resource [:metadata :resourceVersion])
-               (assoc-in [:metadata :resourceVersion]
-                         (get-in old-resource [:metadata :resourceVersion]))))
-            (assoc :action :replace))
-           resp))))))
+           (do 
+             (klog/log :k8s.apply/diff {:diff diff})
+             (->
+              (do-replace
+               ktx conn
+               (cond-> resource
+                 (get-in old-resource [:metadata :resourceVersion])
+                 (assoc-in [:metadata :resourceVersion]
+                           (get-in old-resource [:metadata :resourceVersion]))))
+              (assoc :action :replace)))
+           (assoc resp :action :unchanged)))))))
 
 (defn do-apply-all [ktx conn resource]
   (let [metadata (select-keys (:metadata resource) [:name])
@@ -180,17 +182,18 @@
        (->
         (do-create-all ktx conn resource)
         (assoc :action :create))
-       (let [diff (matcho/match*  old-resource resource)]
+       (let [diff (matcho/match*  old-resource (dissoc resource :k8s/type))]
          (if (not (empty? diff))
-           (->
-            (do-replace-all
-             ktx conn
-             (cond-> resource
-               (get-in old-resource [:metadata :resourceVersion])
-               (assoc-in [:metadata :resourceVersion]
-                         (get-in old-resource [:metadata :resourceVersion]))))
-            (assoc :action :replace))
-           resp))))))
+           (do (klog/log :k8s.apply/diff {:diff diff})
+               (->
+                (do-replace-all
+                 ktx conn
+                 (cond-> resource
+                   (get-in old-resource [:metadata :resourceVersion])
+                   (assoc-in [:metadata :resourceVersion]
+                             (get-in old-resource [:metadata :resourceVersion]))))
+                (assoc :action :replace)))
+           (assoc resp :action :unchanged)))))))
 
 (defn do-apply [ktx conn resource]
   (if (sequential? resource)
