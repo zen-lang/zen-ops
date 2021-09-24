@@ -463,7 +463,7 @@
                     ["api" v "namespaces" :namespace (plural k)]
                     ["apis" g v "namespaces" :namespace (plural k)])
      :params
-     (-> 
+     (->
       (assoc-in list-params 
                 [:keys :namespace]
                 {:type 'zen/string,

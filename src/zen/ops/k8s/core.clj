@@ -149,7 +149,7 @@
 
 (defn print-error [res]
   (when-let [err (:error res)]
-    (klog/log :k8s/error {:error err}))
+    (klog/log :k8s/error {:err (:error res)}))
   res)
 
 (defn do-apply-ns  [ktx conn resource]
@@ -162,8 +162,10 @@
         (assoc :action :create))
        (let [diff (matcho/match*  old-resource (dissoc resource :k8s/type))]
          (if (not (empty? diff))
-           (do 
-             (klog/log :k8s.apply/diff {:diff diff})
+           (do
+             (klog/log :k8s.apply/diff {:k8s/type (:k8s/type resource)
+                                        :name (str (:namespace metadata) "/" (:name metadata))
+                                        :diff diff})
              (->
               (do-replace
                ktx conn
