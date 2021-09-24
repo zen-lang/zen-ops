@@ -454,7 +454,7 @@
           k (name tp)
           v (last parts)]
       [g v k])
-    (throw (Exception. (str "No :k8s/type")))))
+    (throw (Exception. (str "No :k8s/type" res)))))
 
 (defn gen-list-def [ztx res]
   (let [[g v k] (gen-gvk res)]
@@ -654,6 +654,61 @@
                     ["api" v  "namespaces" :namespace  (plural k) :name]
                     ["apis" g v  "namespaces" :namespace  (plural k) :name])
      :params (-> (assoc-in replace-params [:keys :body :confirms] #{(:k8s/type res)})
+                 (update :require conj :namespace)
+                 (assoc-in [:keys :namespace]
+                           {:type 'zen/string
+                            :zen/desc "object name and auth scope, such as for teams and projects"
+                            :openapi/in "path"
+                            :k8s/uniqueItems true}))}))
+
+(def patch-params 
+  {:type 'zen/map,
+   :require #{:name :body :namespace},
+   :keys
+   {:body {:confirms #{'k8s.v1/Patch} :openapi/in "body"},
+    :dryRun
+    {:type 'zen/string,
+     :zen/desc
+     "When present, indicates that modifications should not be persisted. An invalid or unrecognized dryRun directive will result in an error response and no further processing of the request. Valid values are: - All: all dry run stages will be processed",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :fieldManager
+    {:type 'zen/string,
+     :zen/desc
+     "fieldManager is a name associated with the actor or entity that is making these changes. The value must be less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint. This field is required for apply requests (application/apply-patch) but optional for non-apply patch types (JsonPatch, MergePatch, StrategicMergePatch).",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :force
+    {:type 'zen/boolean,
+     :zen/desc
+     "Force is going to \"force\" Apply requests. It means user will re-acquire conflicting fields owned by other people. Force flag must be unset for non-apply patch requests.",
+     :openapi/in "query",
+     :k8s/uniqueItems true},
+    :name
+    {:type 'zen/string,
+     :zen/desc "name of the Service",
+     :openapi/in "path",
+     :k8s/uniqueItems true},
+    :namespace
+    {:type 'zen/string,
+     :zen/desc "object name and auth scope, such as for teams and projects",
+     :openapi/in "path",
+     :k8s/uniqueItems true},
+    :pretty
+    {:type 'zen/string,
+     :zen/desc "If 'true', then the output is pretty printed.",
+     :openapi/in "query",
+     :k8s/uniqueItems true}}})
+
+(defn gen-patch-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :patch
+     :k8s/api {:group g :kind k :version v}
+     :openapi/content-type "application/merge-patch+json"
+     :openapi/url (if (str/blank? g)
+                    ["api" v  "namespaces" :namespace  (plural k) :name]
+                    ["apis" g v  "namespaces" :namespace  (plural k) :name])
+     :params (-> (assoc-in patch-params [:keys :body] {:type 'zen/any :openapi/in "body"})
                  (update :require conj :namespace)
                  (assoc-in [:keys :namespace]
                            {:type 'zen/string

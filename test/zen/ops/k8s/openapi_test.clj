@@ -257,6 +257,13 @@
    (sut/gen-replace-def ztx {:k8s/type 'k8s.apps.v1/Deployment}))
 
 
+  (matcho/match
+   (zen/get-symbol ztx 'k8s.v1.Service/patch)
+   (dissoc 
+    (sut/gen-patch-def ztx {:k8s/type 'k8s.v1/Service})
+    :openapi/content-type))
+
+
   (sut/list-ops ztx "deployment")
 
   (matcho/match

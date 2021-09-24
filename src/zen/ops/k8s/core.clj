@@ -100,6 +100,14 @@
                                   :name (get-in res [:metadata :name])
                                   :body (enrich-with-kind api res)})})))
 
+(defn do-patch [ztx conn res & [params]]
+  (let [{api :k8s/api :as opd} (openapi/gen-patch-def ztx res)]
+    (*do-request ztx conn opd
+                 {:params (merge params
+                                 {:namespace (get-in res [:metadata :namespace])
+                                  :name (get-in res [:metadata :name])
+                                  :body (enrich-with-kind api res)})})))
+
 (defn do-delete-all [ztx conn res & [params]]
   (*do-request ztx conn (openapi/gen-delete-all-def ztx res)
                {:params (merge params {:name (get-in res [:metadata :name])})}))
@@ -152,28 +160,38 @@
     (klog/log :k8s/error {:err (:error res)}))
   res)
 
+(defn hide-no-update [{no-update :k8s/no-update :as res} old-res]
+  (if (nil? no-update)
+    res
+    (->> no-update
+         (reduce (fn [res pth]
+                   (cond
+                     (nil? (get-in old-res pth)) res
+                     (nil? (get-in res pth)) res
+
+                     (get-in res pth) (do
+                                        ;; (klog/log ::hide {:pth pth :new (get-in res pth) :old (get-in old-res pth)})
+                                        (update-in res (butlast pth) dissoc (last pth)))
+                     :else res))
+                 res))))
+
 (defn do-apply-ns  [ktx conn resource]
   (let [metadata (select-keys (:metadata resource) [:name :namespace])
         {err :error old-resource :result :as resp} (do-read ktx conn resource)]
     (print-error
      (if (= 404 (:code err))
        (->
-        (do-create ktx conn resource)
+        (do-create ktx conn (dissoc resource :k8s/no-update))
         (assoc :action :create))
-       (let [diff (matcho/match*  old-resource (dissoc resource :k8s/type))]
-         (if (not (empty? diff))
+       (let [for-update (hide-no-update resource old-resource)
+             diff (matcho/match* old-resource (dissoc for-update :k8s/type :k8s/no-update))]
+         (if (seq diff)
            (do
              (klog/log :k8s.apply/diff {:k8s/type (:k8s/type resource)
                                         :name (str (:namespace metadata) "/" (:name metadata))
                                         :diff diff})
-             (->
-              (do-replace
-               ktx conn
-               (cond-> resource
-                 (get-in old-resource [:metadata :resourceVersion])
-                 (assoc-in [:metadata :resourceVersion]
-                           (get-in old-resource [:metadata :resourceVersion]))))
-              (assoc :action :replace)))
+             (-> (do-patch ktx conn for-update)
+                 (assoc :action :patch)))
            (assoc resp :action :unchanged)))))))
 
 (defn do-apply-all [ktx conn resource]
@@ -185,7 +203,7 @@
         (do-create-all ktx conn resource)
         (assoc :action :create))
        (let [diff (matcho/match*  old-resource (dissoc resource :k8s/type))]
-         (if (not (empty? diff))
+         (if (seq diff)
            (do (klog/log :k8s.apply/diff {:diff diff})
                (->
                 (do-replace-all
