@@ -207,10 +207,15 @@
     {:error {:message (str "No api for " nm)}}))
 
 (defn load-api [ztx nm]
-  (let [res (get-api ztx nm)]
-    (if (:error res)
-      res
-      (load-api-definition ztx nm res))))
+  (if-not (and (get-in @ztx [:gcp/apis nm])
+                 (not (:gcp/disable-cache @ztx)))
+    (let [res (get-api ztx nm)]
+      (if (:error res)
+        res
+        (do (load-api-definition ztx nm res)
+            (swap! ztx assoc-in [:gcp/apis nm] true)
+            :ok)))
+    :already-loaded))
 
 (defn get-url-param [params x]
   (if-let [v (get params x)] v (throw (Exception. (pr-str :missed-param x params)))))
