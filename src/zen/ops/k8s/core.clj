@@ -112,6 +112,11 @@
   (*do-request ztx conn (openapi/gen-delete-all-def ztx res)
                {:params (merge params {:name (get-in res [:metadata :name])})}))
 
+(defn do-delete [ztx conn res & [params]]
+  (*do-request ztx conn (openapi/gen-delete-def ztx res)
+               {:params (merge params {:name (get-in res [:metadata :name])
+                                       :namespace (get-in res [:metadata :namespace])})}))
+
 (defn do-replace-all [ztx conn res & [params]]
   (let [{api :k8s/api :as opd} (openapi/gen-replace-all-def ztx res)]
     (*do-request ztx conn opd

@@ -5,6 +5,7 @@
    [cheshire.core :as cheshire]
    [clojure.java.io :as io]
    [inflections.core :as infl]
+   [klog.core :as klog]
    [clojure.walk]))
 
 (defmulti sch2zen (fn [grp-idx x] (keyword (:type x))))
@@ -236,7 +237,7 @@
                                         (-> (update acc (symbol ns-name) merge {'ns (symbol ns-name)})
                                             (update-in [(symbol ns-name) (symbol sym)]
                                                        (fn [x]
-                                                         (when x (println :WARN :override ns-name sym))
+                                                         (when x (klog/log :k8s/override {:ns ns-name :sym  sym}))
                                                          zop)))))))
                                 acc))))
                acc)))
@@ -573,6 +574,14 @@
      :openapi/url (if (str/blank? g)
                     ["api" v  (plural k) :name]
                     ["apis" g v  (plural k) :name])
+     :params delete-params}))
+
+(defn gen-delete-def [ztx res]
+  (let [[g v k] (gen-gvk res)]
+    {:openapi/method :delete
+     :openapi/url (if (str/blank? g)
+                    ["api" v  "namespaces" :namespace  (plural k) :name]
+                    ["apis" g v  "namespaces" :namespace  (plural k) :name])
      :params delete-params}))
 
 
