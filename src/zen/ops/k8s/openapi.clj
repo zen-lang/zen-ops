@@ -582,7 +582,12 @@
      :openapi/url (if (str/blank? g)
                     ["api" v  "namespaces" :namespace  (plural k) :name]
                     ["apis" g v  "namespaces" :namespace  (plural k) :name])
-     :params delete-params}))
+     :params (assoc-in delete-params
+                       [:keys :namespace]
+                       {:type 'zen/string,
+                        :zen/desc "object name and auth scope, such as for teams and projects",
+                        :openapi/in "path",
+                        :k8s/uniqueItems true})}))
 
 
 (def create-params
